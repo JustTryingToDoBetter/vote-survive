@@ -1,4 +1,4 @@
-export type TeamPreset = {
+export type TeamStarter = {
   name: string;
   animal: string;
   avatarEmoji: string;
@@ -7,7 +7,7 @@ export type TeamPreset = {
   tone: string;
 };
 
-export const DEFAULT_TEAM_PRESETS: TeamPreset[] = [
+export const DEFAULT_TEAMS: TeamStarter[] = [
   {
     name: "PathFinders",
     animal: "Lions",

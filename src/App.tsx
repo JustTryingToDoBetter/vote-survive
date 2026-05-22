@@ -11,7 +11,6 @@ import {
   Gamepad2,
   Music2,
   Play,
-  Plus,
   QrCode,
   RotateCcw,
   Sparkles,
@@ -23,8 +22,7 @@ import {
 } from "lucide-react";
 import { buildRoundDefinition, roundTypeLabels } from "./data/gameContent";
 import {
-  AVATAR_EMOJI_OPTIONS,
-  DEFAULT_TEAM_PRESETS,
+  DEFAULT_TEAMS,
   TEAM_COLOR_OPTIONS,
 } from "./data/teamPresets";
 import { useSoundEffects } from "./hooks/useSoundEffects";
@@ -38,7 +36,6 @@ import type {
   RoundType,
   ScoreEvent,
   Team,
-  TeamDraft,
   VoteRow,
 } from "./lib/types";
 import "./App.css";
@@ -71,8 +68,8 @@ function generateCode(length = 5) {
   ).join("");
 }
 
-function createDefaultDrafts(): TeamDraft[] {
-  return DEFAULT_TEAM_PRESETS.map((preset) => ({
+function createDefaultDrafts() {
+  return DEFAULT_TEAMS.map((preset) => ({
     id: crypto.randomUUID(),
     name: preset.name,
     animal: preset.animal,
@@ -113,7 +110,7 @@ function toRoundRecord(row: Record<string, unknown>): RoundRecord {
 }
 
 function normalizeTeam(team: Team, fallbackIndex: number): Team {
-  const preset = DEFAULT_TEAM_PRESETS[fallbackIndex % DEFAULT_TEAM_PRESETS.length];
+  const preset = DEFAULT_TEAMS[fallbackIndex % DEFAULT_TEAMS.length];
 
   return {
     ...team,
@@ -161,7 +158,6 @@ export default function App() {
   const [votes, setVotes] = useState<VoteRow[]>([]);
   const [scoreEvents, setScoreEvents] = useState<ScoreEvent[]>([]);
   const [leaderTeam, setLeaderTeam] = useState<Team | null>(null);
-  const [teamDrafts, setTeamDrafts] = useState<TeamDraft[]>(createDefaultDrafts);
   const [roomCodeInput, setRoomCodeInput] = useState(initialRoomCode);
   const [teamCodeInput, setTeamCodeInput] = useState("");
   const [selectedRoundType, setSelectedRoundType] = useState<RoundType>("voting");
@@ -354,12 +350,7 @@ export default function App() {
     };
   }, [refreshRoomData, room]);
 
-  async function createRoomFromSetup() {
-    if (teamDrafts.length < 2) {
-      setLoadError("Add at least two teams before starting the game.");
-      return;
-    }
-
+  async function createRoom() {
     setIsLoading(true);
     setLoadError(null);
 
@@ -378,7 +369,7 @@ export default function App() {
       const { data: createdTeams, error: teamsError } = await supabase
         .from("teams")
         .insert(
-          teamDrafts.map((team) => ({
+          createDefaultDrafts().map((team) => ({
             room_id: createdRoom.id,
             name: team.name,
             leader_code: team.leaderCode,
@@ -616,39 +607,6 @@ export default function App() {
     sound.play("winner");
   }
 
-  function updateDraft(
-    draftId: string,
-    field: keyof TeamDraft,
-    value: string
-  ) {
-    setTeamDrafts((current) =>
-      current.map((draft) =>
-        draft.id === draftId ? { ...draft, [field]: value } : draft
-      )
-    );
-  }
-
-  function addTeamDraft() {
-    setTeamDrafts((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        name: `Team ${current.length + 1}`,
-        animal: "Crew",
-        avatarEmoji: "⭐",
-        avatarImage: "",
-        color: TEAM_COLOR_OPTIONS[current.length % TEAM_COLOR_OPTIONS.length],
-        leaderCode: generateCode(4),
-      },
-    ]);
-  }
-
-  function removeTeamDraft(draftId: string) {
-    setTeamDrafts((current) =>
-      current.length <= 2 ? current : current.filter((draft) => draft.id !== draftId)
-    );
-  }
-
   const shouldShowJoinFocus = initialPath === "leader";
 
   return (
@@ -662,22 +620,8 @@ export default function App() {
           setRoomCodeInput={setRoomCodeInput}
           setTeamCodeInput={setTeamCodeInput}
           joinAsLeader={joinAsLeader}
-          goToSetup={() => setMode("setup")}
+          createRoom={createRoom}
           shouldShowJoinFocus={shouldShowJoinFocus}
-        />
-      )}
-
-      {mode === "setup" && (
-        <HostSetupScreen
-          drafts={teamDrafts}
-          loadError={loadError}
-          isLoading={isLoading}
-          setDraftField={updateDraft}
-          resetPresets={() => setTeamDrafts(createDefaultDrafts())}
-          addTeamDraft={addTeamDraft}
-          removeTeamDraft={removeTeamDraft}
-          createRoom={createRoomFromSetup}
-          backHome={() => setMode("home")}
         />
       )}
 
@@ -740,7 +684,7 @@ function HomeScreen(props: {
   setRoomCodeInput: (value: string) => void;
   setTeamCodeInput: (value: string) => void;
   joinAsLeader: () => void;
-  goToSetup: () => void;
+  createRoom: () => void;
   shouldShowJoinFocus: boolean;
 }) {
   return (
@@ -755,14 +699,14 @@ function HomeScreen(props: {
           <span className="eyebrow">Live youth game platform</span>
           <h1>Bright, loud, phone-first fun for your next team night.</h1>
           <p>
-            Create a room, set up your teams, launch voting or all-play rounds,
+            Create a room, launch voting or all-play rounds,
             score fast, and reveal a dramatic winner on the big screen.
           </p>
 
           <div className="hero-actions">
-            <button className="primary-btn" onClick={props.goToSetup}>
+            <button className="primary-btn" onClick={props.createRoom} disabled={props.isLoading}>
               <Play size={18} />
-              Host a Game
+              {props.isLoading ? "Creating..." : "Host a Game"}
             </button>
           </div>
 
@@ -802,152 +746,6 @@ function HomeScreen(props: {
 
           {props.loadError && <p className="error-banner">{props.loadError}</p>}
         </div>
-      </section>
-    </motion.main>
-  );
-}
-
-function HostSetupScreen(props: {
-  drafts: TeamDraft[];
-  loadError: string | null;
-  isLoading: boolean;
-  setDraftField: (draftId: string, field: keyof TeamDraft, value: string) => void;
-  resetPresets: () => void;
-  addTeamDraft: () => void;
-  removeTeamDraft: (draftId: string) => void;
-  createRoom: () => void;
-  backHome: () => void;
-}) {
-  return (
-    <motion.main
-      className="setup-page"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      <header className="setup-header">
-        <div>
-          <p className="section-kicker">Host Setup</p>
-          <h1>Build the teams before the room goes live</h1>
-        </div>
-
-        <div className="header-actions">
-          <button className="ghost-btn" onClick={props.backHome}>
-            Back
-          </button>
-          <button className="ghost-btn" onClick={props.resetPresets}>
-            Reset presets
-          </button>
-          <button className="primary-btn" onClick={props.createRoom}>
-            {props.isLoading ? "Creating..." : "Create room"}
-          </button>
-        </div>
-      </header>
-
-      {props.loadError && <p className="error-banner">{props.loadError}</p>}
-
-      <section className="setup-grid">
-        {props.drafts.map((draft, index) => (
-          <article className="setup-card" key={draft.id} style={{ "--team-color": draft.color } as React.CSSProperties}>
-            <div className="setup-card-top">
-              <TeamAvatar
-                emoji={draft.avatarEmoji}
-                image={draft.avatarImage}
-                name={draft.name}
-                className="team-avatar-display"
-              />
-              <div>
-                <p className="section-kicker">Team {index + 1}</p>
-                <strong>{draft.leaderCode}</strong>
-              </div>
-            </div>
-
-            <label>
-              Team name
-              <input
-                value={draft.name}
-                onChange={(event) =>
-                  props.setDraftField(draft.id, "name", event.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              Animal identity
-              <input
-                value={draft.animal}
-                onChange={(event) =>
-                  props.setDraftField(draft.id, "animal", event.target.value)
-                }
-              />
-            </label>
-
-            <div className="picker-group">
-              <span>Avatar emoji</span>
-              <div className="emoji-picker">
-                {AVATAR_EMOJI_OPTIONS.map((emoji) => (
-                  <button
-                    key={emoji}
-                    className={draft.avatarEmoji === emoji ? "emoji-option active" : "emoji-option"}
-                    onClick={() => props.setDraftField(draft.id, "avatarEmoji", emoji)}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="picker-group">
-              <span>Team color</span>
-              <div className="color-picker">
-                {TEAM_COLOR_OPTIONS.map((color) => (
-                  <button
-                    key={color}
-                    className={draft.color === color ? "color-option active" : "color-option"}
-                    style={{ background: color }}
-                    onClick={() => props.setDraftField(draft.id, "color", color)}
-                    aria-label={`Use color ${color}`}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <label>
-              Leader code
-              <div className="inline-input-row">
-                <input
-                  value={draft.leaderCode}
-                  onChange={(event) =>
-                    props.setDraftField(
-                      draft.id,
-                      "leaderCode",
-                      event.target.value.toUpperCase()
-                    )
-                  }
-                />
-                <button
-                  className="ghost-btn"
-                  onClick={() => props.setDraftField(draft.id, "leaderCode", generateCode(4))}
-                >
-                  Regenerate
-                </button>
-              </div>
-            </label>
-
-            <button
-              className="danger-link"
-              onClick={() => props.removeTeamDraft(draft.id)}
-              disabled={props.drafts.length <= 2}
-            >
-              Remove team
-            </button>
-          </article>
-        ))}
-
-        <button className="add-team-card" onClick={props.addTeamDraft}>
-          <Plus size={24} />
-          Add another team
-        </button>
       </section>
     </motion.main>
   );
@@ -1159,7 +957,7 @@ function HostScreen(props: {
                 <p className="muted-text">
                   {props.activeRound.round_type === "final_double"
                     ? "Final round scoring is doubled automatically."
-                    : "Preset scoring keeps the host flow moving fast."}
+                    : "Quick scoring keeps the host flow moving fast."}
                 </p>
                 <button className="primary-btn" onClick={props.completeRound}>
                   <Check size={18} />
