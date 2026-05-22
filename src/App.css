@@ -1,8 +1,8 @@
 /* src/App.css */
 :root {
   font-family: Inter, system-ui, sans-serif;
-  color: #f8fafc;
-  background: #0f1020;
+  color: #1f2937;
+  background: #fff7ed;
 }
 
 * {
@@ -20,82 +20,124 @@ input {
 
 button {
   border: 0;
-  border-radius: 16px;
-  padding: 14px 18px;
-  background: #facc15;
-  color: #18181b;
-  font-weight: 800;
+  border-radius: 18px;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, #fb923c, #facc15);
+  color: #1f2937;
+  font-weight: 900;
   cursor: pointer;
+  box-shadow: 0 8px 0 #ea580c;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 0 #ea580c;
+}
+
+button:active {
+  transform: translateY(4px);
+  box-shadow: 0 4px 0 #ea580c;
 }
 
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 input {
   width: 100%;
-  border: 1px solid #334155;
-  border-radius: 14px;
-  padding: 14px;
-  background: #020617;
-  color: white;
+  border: 3px solid #fdba74;
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: #ffffff;
+  color: #1f2937;
+  outline: none;
+  font-weight: 700;
+}
+
+input:focus {
+  border-color: #f97316;
+  box-shadow: 0 0 0 5px rgba(249, 115, 22, 0.18);
 }
 
 .page {
   min-height: 100vh;
   padding: 24px;
   background:
-    radial-gradient(circle at top left, rgba(250, 204, 21, 0.22), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.28), transparent 35%),
-    #0f1020;
+    radial-gradient(circle at top left, rgba(251, 146, 60, 0.35), transparent 28%),
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.3), transparent 30%),
+    radial-gradient(circle at bottom left, rgba(244, 114, 182, 0.32), transparent 32%),
+    linear-gradient(135deg, #fff7ed, #ecfeff 45%, #fdf2f8);
 }
 
 .card {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 28px;
-  padding: 24px;
-  background: rgba(15, 23, 42, 0.82);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(16px);
+  border: 4px solid rgba(255, 255, 255, 0.95);
+  border-radius: 32px;
+  padding: 26px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow:
+    0 22px 50px rgba(251, 146, 60, 0.22),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(14px);
 }
 
 .hero {
-  max-width: 720px;
+  max-width: 760px;
   margin: 48px auto;
+  text-align: center;
 }
 
 h1 {
   margin: 0 0 12px;
-  font-size: clamp(2.4rem, 7vw, 5rem);
+  font-size: clamp(2.7rem, 8vw, 5.4rem);
   line-height: 0.9;
+  color: #fb923c;
+  text-shadow:
+    3px 3px 0 #fef3c7,
+    6px 6px 0 rgba(45, 212, 191, 0.35);
 }
 
 h2 {
   margin: 0 0 16px;
-  font-size: clamp(1.5rem, 4vw, 2.5rem);
+  font-size: clamp(1.5rem, 4vw, 2.6rem);
+  color: #0f766e;
 }
 
 .eyebrow {
-  color: #facc15;
-  font-weight: 900;
+  display: inline-block;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: #ccfbf1;
+  color: #0f766e;
+  font-weight: 1000;
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
 
 .muted {
-  color: #cbd5e1;
+  color: #64748b;
+  font-weight: 650;
 }
 
 .success {
-  color: #86efac;
-  font-weight: 800;
+  display: inline-block;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 900;
 }
 
 .join-box {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   margin-top: 32px;
+  text-align: left;
 }
 
 .host-layout {
@@ -116,17 +158,37 @@ h2 {
 .result-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 16px;
-  border-radius: 16px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.08);
+  border: 3px solid rgba(251, 146, 60, 0.28);
+  border-radius: 20px;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  font-weight: 850;
+}
+
+.team-row strong,
+.result-row strong {
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .challenge {
   margin-top: 20px;
-  border-radius: 22px;
-  padding: 20px;
-  background: rgba(250, 204, 21, 0.12);
+  border: 4px dashed #f97316;
+  border-radius: 26px;
+  padding: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.35), transparent 28%),
+    #fff7ed;
+}
+
+.challenge p {
+  font-size: 1.1rem;
+  font-weight: 800;
 }
 
 .button-row {
@@ -136,7 +198,15 @@ h2 {
 }
 
 @media (max-width: 900px) {
+  .page {
+    padding: 16px;
+  }
+
   .host-layout {
     grid-template-columns: 1fr;
+  }
+
+  .hero {
+    margin: 20px auto;
   }
 }
