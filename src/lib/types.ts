@@ -1,4 +1,10 @@
-export type AppMode = "home" | "host" | "leader" | "audience" | "summary";
+export type AppMode =
+  | "home"
+  | "host"
+  | "leader"
+  | "game"
+  | "leaderboard"
+  | "summary";
 
 export type RoundType =
   | "voting"

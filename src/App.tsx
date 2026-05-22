@@ -202,11 +202,17 @@ export default function App() {
   const initialPath =
     typeof window !== "undefined" && window.location.pathname.startsWith("/join")
       ? "leader"
-      : typeof window !== "undefined" && window.location.pathname.startsWith("/audience")
-      ? "audience"
+      : typeof window !== "undefined" &&
+          (window.location.pathname.startsWith("/game") ||
+            window.location.pathname.startsWith("/audience"))
+      ? "game"
+      : typeof window !== "undefined" && window.location.pathname.startsWith("/leaderboard")
+      ? "leaderboard"
       : "home";
 
-  const [mode, setMode] = useState<AppMode>(initialPath === "audience" ? "audience" : "home");
+  const [mode, setMode] = useState<AppMode>(
+    initialPath === "game" || initialPath === "leaderboard" ? initialPath : "home"
+  );
   const [room, setRoom] = useState<Room | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [activeRound, setActiveRound] = useState<RoundRecord | null>(null);
@@ -441,8 +447,8 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    if (initialPath === "audience") {
-      window.setTimeout(() => void loadRoomByCode(initialRoomCode, "audience"), 0);
+    if (initialPath === "game" || initialPath === "leaderboard") {
+      window.setTimeout(() => void loadRoomByCode(initialRoomCode, initialPath), 0);
       return;
     }
 
@@ -953,8 +959,6 @@ export default function App() {
           teams={teams}
           sortedTeams={sortedTeams}
           activeRound={activeRound}
-          rounds={rounds}
-          scoreEvents={scoreEvents}
           voteCounts={voteCounts}
           targetTeam={targetTeam}
           rivalTeam={rivalTeam}
@@ -1002,10 +1006,9 @@ export default function App() {
         />
       )}
 
-      {mode === "audience" && room && (
-        <AudienceScreen
+      {mode === "game" && room && (
+        <GameScreen
           room={room}
-          teams={teams}
           sortedTeams={sortedTeams}
           activeRound={activeRound}
           voteCounts={voteCounts}
@@ -1013,6 +1016,17 @@ export default function App() {
           rivalTeam={rivalTeam}
           secondsLeft={secondsLeft}
           totalVotes={totalVotes}
+          syncState={syncState}
+          showWinner={showWinner || room.status === "winner" || activeRound?.status === "winner"}
+          winnerTeam={winnerTeam}
+          reducedMotion={Boolean(reducedMotion)}
+        />
+      )}
+
+      {mode === "leaderboard" && room && (
+        <LeaderboardScreen
+          room={room}
+          sortedTeams={sortedTeams}
           syncState={syncState}
           showWinner={showWinner || room.status === "winner" || activeRound?.status === "winner"}
           winnerTeam={winnerTeam}
@@ -1115,8 +1129,6 @@ function HostScreen(props: {
   teams: Team[];
   sortedTeams: Team[];
   activeRound: RoundRecord | null;
-  rounds: RoundRecord[];
-  scoreEvents: ScoreEvent[];
   voteCounts: { team: Team; count: number }[];
   targetTeam: Team | null;
   rivalTeam: Team | null;
@@ -1156,10 +1168,14 @@ function HostScreen(props: {
   const joinedTeams = props.teams.filter((team) => team.joined_at).length;
   const votingTeams = Math.max(0, props.teams.length);
   const voteProgress = votingTeams > 0 ? Math.round((props.totalVotes / votingTeams) * 100) : 0;
-  const audienceUrl =
+  const gameUrl =
     typeof window === "undefined"
       ? ""
-      : `${window.location.origin}/audience?room=${props.room.code}`;
+      : `${window.location.origin}/game?room=${props.room.code}`;
+  const leaderboardUrl =
+    typeof window === "undefined"
+      ? ""
+      : `${window.location.origin}/leaderboard?room=${props.room.code}`;
   const roundStatusLabel = props.activeRound
     ? `${roundTypeLabels[props.activeRound.round_type]} - ${props.activeRound.status}`
     : "Live room - choose a round";
@@ -1208,9 +1224,13 @@ function HostScreen(props: {
             <Sparkles size={18} />
             Random round
           </button>
-          <a className="ghost-btn" href={audienceUrl} target="_blank" rel="noreferrer">
+          <a className="ghost-btn" href={gameUrl} target="_blank" rel="noreferrer">
             <Eye size={18} />
-            Audience
+            Game screen
+          </a>
+          <a className="ghost-btn" href={leaderboardUrl} target="_blank" rel="noreferrer">
+            <Trophy size={18} />
+            Scores
           </a>
         </div>
       </header>
@@ -1223,7 +1243,6 @@ function HostScreen(props: {
             <HostStatCard label="Round status" value={roundStatusLabel} icon={<Settings size={18} />} />
             <HostStatCard label="Joined teams" value={`${joinedTeams}/${props.teams.length} joined`} icon={<Users size={18} />} />
             <HostStatCard label="Voting progress" value={`${voteProgress}%`} icon={<Vote size={18} />} />
-            <HostStatCard label="History" value={`${props.rounds.length} rounds`} icon={<Trophy size={18} />} />
             <HostStatCard
               label="Sync"
               value={formatSyncState(props.syncState)}
@@ -1418,8 +1437,14 @@ function HostScreen(props: {
           </div>
 
           <div className="game-card">
-            <p className="section-kicker">Live leaderboard</p>
-            <AnimatedLeaderboard teams={props.sortedTeams} maxScore={maxScore} />
+            <p className="section-kicker">Score controls</p>
+            <div className="mini-leaderboard">
+              <AnimatedLeaderboard teams={props.sortedTeams} maxScore={maxScore} compact />
+            </div>
+            <a className="ghost-btn wide-btn" href={leaderboardUrl} target="_blank" rel="noreferrer">
+              <Trophy size={18} />
+              Show leaderboard
+            </a>
             <button className="ghost-btn wide-btn" onClick={props.revealWinner}>
               <Crown size={18} />
               Final reveal
@@ -1428,15 +1453,6 @@ function HostScreen(props: {
               <RotateCcw size={18} />
               Reset game
             </button>
-          </div>
-
-          <div className="game-card">
-            <p className="section-kicker">Game history</p>
-            <GameHistoryPanel
-              rounds={props.rounds}
-              scoreEvents={props.scoreEvents}
-              teams={props.teams}
-            />
           </div>
 
           <AdminContentEditor
@@ -1467,9 +1483,8 @@ function formatSyncState(syncState: SyncState) {
   return `${syncState.latencyMs}ms`;
 }
 
-function AudienceScreen(props: {
+function GameScreen(props: {
   room: Room;
-  teams: Team[];
   sortedTeams: Team[];
   activeRound: RoundRecord | null;
   voteCounts: { team: Team; count: number }[];
@@ -1494,7 +1509,7 @@ function AudienceScreen(props: {
     >
       <header className="audience-header">
         <div>
-          <p className="section-kicker">Audience screen</p>
+          <p className="section-kicker">Game screen</p>
           <h1>{props.room.code}</h1>
           <p className="header-helper">Sync {formatSyncState(props.syncState)}</p>
         </div>
@@ -1514,31 +1529,25 @@ function AudienceScreen(props: {
           reducedMotion={props.reducedMotion}
         />
       ) : (
-        <section className="audience-grid">
-          <div className="audience-main">
-            <p className="section-kicker">Big leaderboard</p>
-            <AnimatedLeaderboard teams={props.sortedTeams} maxScore={maxScore} />
+        <section className="game-projector-grid">
+          <div className="projector-challenge">
+            {props.activeRound ? (
+              <ChallengeRevealCard
+                round={props.activeRound}
+                targetTeam={props.targetTeam}
+                rivalTeam={props.rivalTeam}
+              />
+            ) : (
+              <div className="empty-state">
+                <Sparkles size={42} />
+                <h2>Live room open</h2>
+                <p>Round content appears here as soon as the host launches it.</p>
+              </div>
+            )}
           </div>
 
-          <div className="audience-side">
-            <div className="game-card">
-              <p className="section-kicker">Current matchup</p>
-              {props.activeRound ? (
-                <ChallengeRevealCard
-                  round={props.activeRound}
-                  targetTeam={props.targetTeam}
-                  rivalTeam={props.rivalTeam}
-                />
-              ) : (
-                <div className="empty-state">
-                  <Sparkles size={42} />
-                  <h2>Live room open</h2>
-                  <p>Round content appears here as soon as the host launches it.</p>
-                </div>
-              )}
-            </div>
-
-            <div className="game-card">
+          {props.activeRound?.status === "voting" && (
+            <div className="projector-votes game-card">
               <div className="live-row">
                 <div>
                   <p className="section-kicker">Live votes</p>
@@ -1557,7 +1566,48 @@ function AudienceScreen(props: {
                 ))}
               </div>
             </div>
-          </div>
+          )}
+        </section>
+      )}
+    </motion.main>
+  );
+}
+
+function LeaderboardScreen(props: {
+  room: Room;
+  sortedTeams: Team[];
+  syncState: SyncState;
+  showWinner: boolean;
+  winnerTeam: Team | null;
+  reducedMotion: boolean;
+}) {
+  const maxScore = Math.max(1, ...props.sortedTeams.map((team) => team.score));
+
+  return (
+    <motion.main
+      className="audience-shell"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <header className="audience-header">
+        <div>
+          <p className="section-kicker">Leaderboard</p>
+          <h1>{props.room.code}</h1>
+          <p className="header-helper">Sync {formatSyncState(props.syncState)}</p>
+        </div>
+      </header>
+
+      {props.showWinner && props.winnerTeam ? (
+        <WinnerReveal
+          winner={props.winnerTeam}
+          teams={props.sortedTeams}
+          maxScore={maxScore}
+          reducedMotion={props.reducedMotion}
+        />
+      ) : (
+        <section className="audience-main leaderboard-screen-panel">
+          <AnimatedLeaderboard teams={props.sortedTeams} maxScore={maxScore} />
         </section>
       )}
     </motion.main>
@@ -2130,9 +2180,9 @@ function ScoreCard(props: {
   );
 }
 
-function AnimatedLeaderboard(props: { teams: Team[]; maxScore: number }) {
+function AnimatedLeaderboard(props: { teams: Team[]; maxScore: number; compact?: boolean }) {
   return (
-    <div className="leaderboard">
+    <div className={props.compact ? "leaderboard leaderboard-compact" : "leaderboard"}>
       {props.teams.map((team, index) => {
         const width = `${Math.max(10, (Math.max(0, team.score) / props.maxScore) * 100)}%`;
 
@@ -2163,73 +2213,6 @@ function AnimatedLeaderboard(props: { teams: Team[]; maxScore: number }) {
               <motion.div className="score-meter-fill" animate={{ width }} />
             </div>
           </motion.div>
-        );
-      })}
-    </div>
-  );
-}
-
-function GameHistoryPanel(props: {
-  rounds: RoundRecord[];
-  scoreEvents: ScoreEvent[];
-  teams: Team[];
-}) {
-  function getRoundWinners(roundId: string) {
-    const totals = new Map<string, number>();
-
-    props.scoreEvents
-      .filter((event) => event.round_id === roundId && !event.undone_at)
-      .forEach((event) => {
-        totals.set(event.team_id, (totals.get(event.team_id) ?? 0) + event.delta);
-      });
-
-    const topScore = Math.max(0, ...totals.values());
-    if (topScore <= 0) return [];
-
-    return [...totals.entries()]
-      .filter(([, total]) => total === topScore)
-      .map(([teamId]) => props.teams.find((team) => team.id === teamId)?.name ?? "Team");
-  }
-
-  return (
-    <div className="history-stack">
-      {props.rounds.length === 0 && (
-        <p className="muted-text">No rounds yet. Start one and the story builds here.</p>
-      )}
-
-      {props.rounds.map((round) => {
-        const events = props.scoreEvents.filter((event) => event.round_id === round.id);
-        const pressureTeam =
-          props.teams.find((team) => team.id === round.target_team_id)?.name ?? "All teams";
-        const winners = getRoundWinners(round.id);
-
-        return (
-          <article className="history-card" key={round.id}>
-            <div className="history-card-top">
-              <strong>
-                Round {round.round_number ?? "?"}: {roundTypeLabels[round.round_type]}
-              </strong>
-              <span>{pressureTeam}</span>
-            </div>
-            <p>{round.challenge}</p>
-            {winners.length > 0 && (
-              <p className="history-winner-line">
-                Winner{winners.length > 1 ? "s" : ""}: {winners.join(" & ")}
-              </p>
-            )}
-            <div className="history-events">
-              {events.slice(0, 4).map((event) => {
-                const teamName =
-                  props.teams.find((team) => team.id === event.team_id)?.name ?? "Team";
-                return (
-                  <span key={event.id}>
-                    {teamName} {event.delta > 0 ? `+${event.delta}` : event.delta}
-                  </span>
-                );
-              })}
-              {events.length === 0 && <span>No score events yet</span>}
-            </div>
-          </article>
         );
       })}
     </div>
