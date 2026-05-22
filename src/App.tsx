@@ -557,6 +557,7 @@ function HostScreen(props: {
   awardPoints: (points: number) => void;
 }) {
   const totalVotes = props.voteCounts.reduce((sum, item) => sum + item.count, 0);
+  const maxScore = Math.max(1, ...props.teams.map((team) => team.score));
 
   return (
     <motion.main
@@ -649,11 +650,12 @@ function HostScreen(props: {
 
           <div className="leaderboard">
             {props.sortedTeams.map((team, index) => (
-              <LeaderboardRow
+              <LeaderboardScoreCard
                 key={team.id}
                 team={team}
                 rank={index + 1}
                 index={index}
+                maxScore={maxScore}
               />
             ))}
           </div>
@@ -881,6 +883,43 @@ function ChallengeReveal(props: {
   );
 }
 
+function LeaderboardScoreCard(props: {
+  team: Team;
+  rank: number;
+  index: number;
+  maxScore: number;
+}) {
+  const scoreWidth = `${Math.max(
+    12,
+    (Math.max(0, props.team.score) / props.maxScore) * 100
+  )}%`;
+
+  return (
+    <motion.div
+      className={`leaderboard-row ${props.rank === 1 ? "is-first" : ""}`}
+      style={teamStyle(props.index)}
+      layout
+    >
+      <div className="leaderboard-row-top">
+        <span className="rank">{props.rank}</span>
+        <div className="team-avatar">{getInitials(props.team.name)}</div>
+        <div className="leaderboard-team-copy">
+          <strong>{props.team.name}</strong>
+          <span>{props.rank === 1 ? "Leading the room" : "Still in the fight"}</span>
+        </div>
+        <div className="score-cluster">
+          <span className="score-number">{props.team.score}</span>
+          <span className="score-label">pts</span>
+        </div>
+      </div>
+
+      <div className="score-meter" aria-hidden="true">
+        <div className="score-meter-fill" style={{ width: scoreWidth }} />
+      </div>
+    </motion.div>
+  );
+}
+
 function LeaderboardRow(props: { team: Team; rank: number; index: number }) {
   return (
     <motion.div
@@ -895,3 +934,5 @@ function LeaderboardRow(props: { team: Team; rank: number; index: number }) {
     </motion.div>
   );
 }
+
+void LeaderboardRow;
