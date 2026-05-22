@@ -218,103 +218,6 @@ export const roundTypeLabels: Record<RoundType, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// ROUND TEMPLATES
-// ---------------------------------------------------------------------------
-
-export const roundTemplates: Record<RoundType, () => RoundDefinition> = {
-  voting: () => ({
-    type: "voting",
-    title: "Pressure Duel Vote",
-    prompt: pickRandom(votingPrompts),
-    challenge:
-      "The most-voted team enters a 1v1 showdown against a rival picked by the host or by score position.",
-    instructions:
-      "Leaders vote from their phones. Once locked, reveal the pressure team and match them into a direct duel.",
-    scoringGuide:
-      "Use winner and runner-up scoring for the duel, then give participation or bonus points to the rest.",
-    twist: pickRandom(twists),
-    requiresVoting: true,
-  }),
-
-  all_play: () => ({
-    type: "all_play",
-    title: "Tag-Team Clash",
-    prompt: "This round runs as 2v2 matchups across the whole room.",
-    challenge: pickRandom(allPlayChallenges),
-    instructions:
-      "No voting. Pair teams into two 2v2 battles or run one featured 2v2 showdown at a time.",
-    scoringGuide:
-      "Score the winning duo high, the other duo as runner-up or effort, then add custom bonuses if needed.",
-    requiresVoting: false,
-  }),
-
-  quiz_burst: () => ({
-    type: "quiz_burst",
-    title: "Quiz Burst Face-Off",
-    prompt: "Two teams enter. One answer swings it.",
-    challenge: `1v1 quick-fire question: ${pickRandom(bibleQuestions)}`,
-    instructions:
-      "Pick two teams to face off first, then rotate challengers or keep the winner on the floor.",
-    scoringGuide:
-      "Fastest correct answer wins the duel. Score the winner, runner-up, and any teams waiting for a follow-up round.",
-    twist: pickRandom(twists),
-    requiresVoting: false,
-  }),
-
-  bible_speed: () => ({
-    type: "bible_speed",
-    title: "Bible Speed Face-Off",
-    prompt: "Find it. Shout it. Beat the team across from you.",
-    challenge: pickRandom(bibleSpeedChallenges),
-    instructions:
-      "Host gives the reference, starts the timer, and calls one matchup at a time or two duos side by side.",
-    scoringGuide:
-      "Use winner, runner-up, and effort scoring based on each matchup result.",
-    requiresVoting: false,
-  }),
-
-  dance_battle: () => ({
-    type: "dance_battle",
-    title: "Dance Battle Bracket",
-    prompt: "Energy check. Pick your 1v1 or 2v2 showdown.",
-    challenge: pickRandom(danceBattleChallenges),
-    instructions:
-      "No voting needed. Let the host call the bracket and score confidence, creativity, and crowd energy.",
-    scoringGuide:
-      "Winning act gets top points, losing act gets runner-up or effort points, and crowd favourites can earn a bonus.",
-    requiresVoting: false,
-  }),
-
-  steal: () => ({
-    type: "steal",
-    title: "Steal Duel",
-    prompt: "One 1v1 battle can swing the entire room.",
-    challenge: pickRandom(stealChallenges),
-    instructions:
-      "Use voting first to pick the pressure team, then match them against one rival for the steal attempt.",
-    scoringGuide:
-      "Award normal winner and runner-up points, then use a custom score if you want to add the steal bonus.",
-    twist: pickRandom(twists),
-    requiresVoting: true,
-  }),
-
-  final_double: () => ({
-    type: "final_double",
-    title: "Final Round",
-    prompt: "Everything counts double now. This is where legends are made.",
-    challenge:
-      "Run one last dramatic set of 1v1 or 2v2 showdowns with doubled scoring. Make it count.",
-    instructions:
-      "Host launches the final round, chooses the final matchups, scores every team, then reveals the winner.",
-    scoringGuide:
-      "Every score action is doubled automatically in the final round. No holding back.",
-    twist: pickRandom(twists),
-    requiresVoting: false,
-    isFinal: true,
-  }),
-};
-
-// ---------------------------------------------------------------------------
 // PUBLIC ENTRY POINT
 // ---------------------------------------------------------------------------
 
@@ -330,5 +233,103 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
       "steal",
     ]);
 
-  return roundTemplates[type]();
+  switch (type) {
+    case "voting":
+      return {
+        type,
+        title: "Pressure Duel Vote",
+        prompt: pickRandom(votingPrompts),
+        challenge:
+          "The most-voted team enters a 1v1 showdown against a rival picked by the host or by score position.",
+        instructions:
+          "Leaders vote from their phones. Once locked, reveal the pressure team and match them into a direct duel.",
+        scoringGuide:
+          "Use winner and runner-up scoring for the duel, then give participation or bonus points to the rest.",
+        twist: pickRandom(twists),
+        requiresVoting: true,
+      };
+
+    case "all_play":
+      return {
+        type,
+        title: "Tag-Team Clash",
+        prompt: "This round runs as 2v2 matchups across the whole room.",
+        challenge: pickRandom(allPlayChallenges),
+        instructions:
+          "No voting. Pair teams into two 2v2 battles or run one featured 2v2 showdown at a time.",
+        scoringGuide:
+          "Score the winning duo high, the other duo as runner-up or effort, then add custom bonuses if needed.",
+        requiresVoting: false,
+      };
+
+    case "quiz_burst":
+      return {
+        type,
+        title: "Quiz Burst Face-Off",
+        prompt: "Two teams enter. One answer swings it.",
+        challenge: `1v1 quick-fire question: ${pickRandom(bibleQuestions)}`,
+        instructions:
+          "Pick two teams to face off first, then rotate challengers or keep the winner on the floor.",
+        scoringGuide:
+          "Fastest correct answer wins the duel. Score the winner, runner-up, and any teams waiting for a follow-up round.",
+        twist: pickRandom(twists),
+        requiresVoting: false,
+      };
+
+    case "bible_speed":
+      return {
+        type,
+        title: "Bible Speed Face-Off",
+        prompt: "Find it. Shout it. Beat the team across from you.",
+        challenge: pickRandom(bibleSpeedChallenges),
+        instructions:
+          "Host gives the reference, starts the timer, and calls one matchup at a time or two duos side by side.",
+        scoringGuide:
+          "Use winner, runner-up, and effort scoring based on each matchup result.",
+        requiresVoting: false,
+      };
+
+    case "dance_battle":
+      return {
+        type,
+        title: "Dance Battle Bracket",
+        prompt: "Energy check. Pick your 1v1 or 2v2 showdown.",
+        challenge: pickRandom(danceBattleChallenges),
+        instructions:
+          "No voting needed. Let the host call the bracket and score confidence, creativity, and crowd energy.",
+        scoringGuide:
+          "Winning act gets top points, losing act gets runner-up or effort points, and crowd favourites can earn a bonus.",
+        requiresVoting: false,
+      };
+
+    case "steal":
+      return {
+        type,
+        title: "Steal Duel",
+        prompt: "One 1v1 battle can swing the entire room.",
+        challenge: pickRandom(stealChallenges),
+        instructions:
+          "Use voting first to pick the pressure team, then match them against one rival for the steal attempt.",
+        scoringGuide:
+          "Award normal winner and runner-up points, then use a custom score if you want to add the steal bonus.",
+        twist: pickRandom(twists),
+        requiresVoting: true,
+      };
+
+    case "final_double":
+      return {
+        type,
+        title: "Final Round",
+        prompt: "Everything counts double now. This is where legends are made.",
+        challenge:
+          "Run one last dramatic set of 1v1 or 2v2 showdowns with doubled scoring. Make it count.",
+        instructions:
+          "Host launches the final round, chooses the final matchups, scores every team, then reveals the winner.",
+        scoringGuide:
+          "Every score action is doubled automatically in the final round. No holding back.",
+        twist: pickRandom(twists),
+        requiresVoting: false,
+        isFinal: true,
+      };
+  }
 }
