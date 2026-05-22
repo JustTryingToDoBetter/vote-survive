@@ -47,6 +47,8 @@ import "./App.css";
 
 const DEFAULT_ROUND_SECONDS = 45;
 const HOST_SESSION_KEY = "vote-survive-host-session";
+const LIVE_SYNC_INTERVAL_MS = 2500;
+const REALTIME_DEBOUNCE_MS = 120;
 
 const SCORE_PRESETS = [
   { label: "+2 Participation", delta: 2, reason: "Participation" },
@@ -55,6 +57,12 @@ const SCORE_PRESETS = [
   { label: "+10 Winner", delta: 10, reason: "Winner" },
   { label: "-3 Penalty", delta: -3, reason: "Penalty" },
 ] as const;
+
+type SyncState = {
+  isSyncing: boolean;
+  lastSyncAt: number | null;
+  latencyMs: number | null;
+};
 
 const winnerVideoByAnimal: Record<string, string> = {
   lions: lionWinnerVideo,
@@ -216,8 +224,15 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
   const [showWinner, setShowWinner] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>({
+    isSyncing: false,
+    lastSyncAt: null,
+    latencyMs: null,
+  });
   const lastCountdownSoundRef = useRef<number | null>(null);
   const autoLockingRoundRef = useRef<string | null>(null);
+  const refreshSequenceRef = useRef(0);
+  const refreshTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -285,6 +300,7 @@ export default function App() {
     [scoreEvents]
   );
 
+  const activeRoundId = activeRound?.id ?? null;
   const winnerTeam = sortedTeams[0] ?? null;
   useEffect(() => {
     if (
@@ -303,11 +319,21 @@ export default function App() {
   }, [activeRound?.status, secondsLeft, sound]);
 
   const refreshRoomData = useCallback(async (roomId: string) => {
+    const requestId = refreshSequenceRef.current + 1;
+    refreshSequenceRef.current = requestId;
+    const startedAt = performance.now();
+
     try {
+      setSyncState((current) => ({ ...current, isSyncing: true }));
       setLoadError(null);
 
-      const [{ data: teamRows, error: teamError }, { data: roundRows, error: roundError }] =
+      const [
+        { data: roomRow, error: roomError },
+        { data: teamRows, error: teamError },
+        { data: roundRows, error: roundError },
+      ] =
         await Promise.all([
+          supabase.from("rooms").select("*").eq("id", roomId).single(),
           supabase.from("teams").select("*").eq("room_id", roomId),
           supabase
             .from("rounds")
@@ -316,8 +342,10 @@ export default function App() {
             .order("created_at", { ascending: false }),
         ]);
 
+      if (roomError) throw roomError;
       if (teamError) throw teamError;
       if (roundError) throw roundError;
+      if (requestId !== refreshSequenceRef.current) return;
 
       const normalizedTeams = (teamRows ?? []).map((team, index) =>
         normalizeTeam(team as Team, index)
@@ -325,22 +353,24 @@ export default function App() {
       const mappedRounds = (roundRows ?? []).map((row) =>
         toRoundRecord(row as Record<string, unknown>)
       );
+      const currentRound =
+        mappedRounds.find((round) => round.status !== "complete") ?? null;
 
+      setRoom(roomRow as Room);
       setTeams(normalizedTeams);
       setRounds(mappedRounds);
-      setActiveRound(mappedRounds[0] ?? null);
+      setActiveRound(currentRound);
 
-      const latestRound = mappedRounds[0];
-
-      if (!latestRound) {
+      if (!currentRound) {
         setVotes([]);
       } else {
         const { data: voteRows, error: voteError } = await supabase
           .from("votes")
           .select("*")
-          .eq("round_id", latestRound.id);
+          .eq("round_id", currentRound.id);
 
         if (voteError) throw voteError;
+        if (requestId !== refreshSequenceRef.current) return;
         setVotes((voteRows ?? []) as VoteRow[]);
       }
 
@@ -353,14 +383,33 @@ export default function App() {
       if (scoreError) {
         setScoreEvents([]);
       } else {
+        if (requestId !== refreshSequenceRef.current) return;
         setScoreEvents((scoreRows ?? []) as ScoreEvent[]);
       }
+
+      setSyncState({
+        isSyncing: false,
+        lastSyncAt: Date.now(),
+        latencyMs: Math.round(performance.now() - startedAt),
+      });
     } catch (error) {
+      setSyncState((current) => ({ ...current, isSyncing: false }));
       setLoadError(
         error instanceof Error ? error.message : "Unable to refresh room right now."
       );
     }
   }, []);
+
+  const queueRoomRefresh = useCallback((roomId: string, delay = REALTIME_DEBOUNCE_MS) => {
+    if (refreshTimerRef.current) {
+      window.clearTimeout(refreshTimerRef.current);
+    }
+
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      void refreshRoomData(roomId);
+    }, delay);
+  }, [refreshRoomData]);
 
   const loadRoomByCode = useCallback(async (code: string, nextMode: AppMode) => {
     const normalizedCode = code.trim().toUpperCase();
@@ -415,39 +464,66 @@ export default function App() {
   useEffect(() => {
     if (!room) return;
 
-    const refreshTimer = window.setTimeout(() => {
-      void refreshRoomData(room.id);
-    }, 0);
+    queueRoomRefresh(room.id, 0);
 
     const channel = supabase
       .channel(`room-${room.id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "teams", filter: `room_id=eq.${room.id}` },
-        () => void refreshRoomData(room.id)
+        () => queueRoomRefresh(room.id)
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "rounds", filter: `room_id=eq.${room.id}` },
-        () => void refreshRoomData(room.id)
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "votes" },
-        () => void refreshRoomData(room.id)
+        () => queueRoomRefresh(room.id)
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "score_events", filter: `room_id=eq.${room.id}` },
-        () => void refreshRoomData(room.id)
+        () => queueRoomRefresh(room.id)
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
+        () => queueRoomRefresh(room.id)
+      )
+      .subscribe();
+
+    const pollTimer = window.setInterval(() => {
+      queueRoomRefresh(room.id, 0);
+    }, LIVE_SYNC_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(pollTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [queueRoomRefresh, room]);
+
+  useEffect(() => {
+    if (!room || !activeRoundId) return;
+
+    const channel = supabase
+      .channel(`votes-${activeRoundId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "votes", filter: `round_id=eq.${activeRoundId}` },
+        () => queueRoomRefresh(room.id, 60)
       )
       .subscribe();
 
     return () => {
-      window.clearTimeout(refreshTimer);
       void supabase.removeChannel(channel);
     };
-  }, [refreshRoomData, room]);
+  }, [activeRoundId, queueRoomRefresh, room]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, []);
 
   async function createRoom() {
     setIsLoading(true);
@@ -597,6 +673,7 @@ export default function App() {
 
       setSelectedRoundType(definition.type);
       setShowWinner(false);
+      queueRoomRefresh(room.id, 0);
       sound.play("roundStart");
     } catch (error) {
       setLoadError(
@@ -622,6 +699,27 @@ export default function App() {
       return;
     }
 
+    setVotes((current) => {
+      const existing = current.find((vote) => vote.voter_team_id === leaderTeam.id);
+      if (existing) {
+        return current.map((vote) =>
+          vote.voter_team_id === leaderTeam.id
+            ? { ...vote, target_team_id: targetTeamId }
+            : vote
+        );
+      }
+
+      return [
+        ...current,
+        {
+          id: `optimistic-${leaderTeam.id}`,
+          round_id: activeRound.id,
+          voter_team_id: leaderTeam.id,
+          target_team_id: targetTeamId,
+        },
+      ];
+    });
+    if (room) queueRoomRefresh(room.id, 250);
     sound.play("voteSubmit");
   }
 
@@ -643,8 +741,14 @@ export default function App() {
       return;
     }
 
+    setActiveRound((current) =>
+      current?.id === activeRound.id
+        ? { ...current, status: "scoring", target_team_id: winner?.team.id ?? null }
+        : current
+    );
+    if (room) queueRoomRefresh(room.id, 120);
     sound.play("reveal");
-  }, [activeRound, sortedVoteCounts, sound]);
+  }, [activeRound, queueRoomRefresh, room, sortedVoteCounts, sound]);
 
   useEffect(() => {
     if (!activeRound || activeRound.status !== "voting" || secondsLeft > 0) return;
@@ -673,6 +777,12 @@ export default function App() {
       return;
     }
 
+    setTeams((current) =>
+      current.map((entry) =>
+        entry.id === teamId ? { ...entry, score: entry.score + finalDelta } : entry
+      )
+    );
+
     const { error: eventError } = await supabase.from("score_events").insert({
       room_id: room.id,
       round_id: activeRound?.id ?? null,
@@ -686,6 +796,7 @@ export default function App() {
       return;
     }
 
+    queueRoomRefresh(room.id, 250);
     sound.play("score");
   }
 
@@ -712,7 +823,15 @@ export default function App() {
 
     if (eventError) {
       setLoadError(eventError.message);
+      return;
     }
+
+    setTeams((current) =>
+      current.map((entry) =>
+        entry.id === team.id ? { ...entry, score: entry.score - latestScoreEvent.delta } : entry
+      )
+    );
+    if (room) queueRoomRefresh(room.id, 250);
   }
 
   async function completeRound() {
@@ -732,17 +851,25 @@ export default function App() {
 
     if (activeRound.round_type === "final_double") {
       setShowWinner(true);
+      setActiveRound((current) =>
+        current?.id === activeRound.id ? { ...current, status: "winner" } : current
+      );
+      if (room) queueRoomRefresh(room.id, 120);
       sound.play("winner");
       return;
     }
 
     await supabase.from("rooms").update({ status: "active" }).eq("id", activeRound.room_id);
+    setActiveRound(null);
+    if (room) queueRoomRefresh(room.id, 120);
   }
 
   async function revealWinner() {
     if (!room) return;
     setShowWinner(true);
     await supabase.from("rooms").update({ status: "winner" }).eq("id", room.id);
+    setRoom((current) => (current ? { ...current, status: "winner" } : current));
+    queueRoomRefresh(room.id, 120);
     sound.play("winner");
   }
 
@@ -769,6 +896,8 @@ export default function App() {
       setRounds([]);
       setActiveRound(null);
       setScoreEvents([]);
+      setRoom((current) => (current ? { ...current, status: "active" } : current));
+      queueRoomRefresh(room.id, 120);
       sound.play("reveal");
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Unable to reset game.");
@@ -832,6 +961,7 @@ export default function App() {
           secondsLeft={secondsLeft}
           totalVotes={totalVotes}
           loadError={loadError}
+          syncState={syncState}
           selectedRoundType={selectedRoundType}
           setSelectedRoundType={setSelectedRoundType}
           timerDuration={timerDuration}
@@ -883,6 +1013,7 @@ export default function App() {
           rivalTeam={rivalTeam}
           secondsLeft={secondsLeft}
           totalVotes={totalVotes}
+          syncState={syncState}
           showWinner={showWinner || room.status === "winner" || activeRound?.status === "winner"}
           winnerTeam={winnerTeam}
           reducedMotion={Boolean(reducedMotion)}
@@ -992,6 +1123,7 @@ function HostScreen(props: {
   secondsLeft: number;
   totalVotes: number;
   loadError: string | null;
+  syncState: SyncState;
   selectedRoundType: RoundType;
   setSelectedRoundType: (value: RoundType) => void;
   timerDuration: number;
@@ -1092,6 +1224,11 @@ function HostScreen(props: {
             <HostStatCard label="Joined teams" value={`${joinedTeams}/${props.teams.length} joined`} icon={<Users size={18} />} />
             <HostStatCard label="Voting progress" value={`${voteProgress}%`} icon={<Vote size={18} />} />
             <HostStatCard label="History" value={`${props.rounds.length} rounds`} icon={<Trophy size={18} />} />
+            <HostStatCard
+              label="Sync"
+              value={formatSyncState(props.syncState)}
+              icon={<TimerReset size={18} />}
+            />
           </div>
 
           <div className="game-card">
@@ -1324,6 +1461,12 @@ function HostStatCard(props: { label: string; value: string; icon: React.ReactNo
   );
 }
 
+function formatSyncState(syncState: SyncState) {
+  if (syncState.isSyncing && syncState.latencyMs === null) return "syncing";
+  if (syncState.latencyMs === null) return "not synced";
+  return `${syncState.latencyMs}ms`;
+}
+
 function AudienceScreen(props: {
   room: Room;
   teams: Team[];
@@ -1334,6 +1477,7 @@ function AudienceScreen(props: {
   rivalTeam: Team | null;
   secondsLeft: number;
   totalVotes: number;
+  syncState: SyncState;
   showWinner: boolean;
   winnerTeam: Team | null;
   reducedMotion: boolean;
@@ -1352,6 +1496,7 @@ function AudienceScreen(props: {
         <div>
           <p className="section-kicker">Audience screen</p>
           <h1>{props.room.code}</h1>
+          <p className="header-helper">Sync {formatSyncState(props.syncState)}</p>
         </div>
         {props.activeRound?.status === "voting" && (
           <TimerRing
