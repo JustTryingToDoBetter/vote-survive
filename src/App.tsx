@@ -5,6 +5,10 @@ import eagleWinnerVideo from "./assets/winners/eagle.mp4";
 import lionWinnerVideo from "./assets/winners/lion.mp4";
 import sheepWinnerVideo from "./assets/winners/sheep.mp4";
 import tigerWinnerVideo from "./assets/winners/tiger.mp4";
+import eagleLoserVideo from "./assets/losers/eagle_lose.mp4";
+import lionLoserVideo from "./assets/losers/lion_lose.mp4";
+import sheepLoserVideo from "./assets/losers/sheep_lose.mp4";
+import tigerLoserVideo from "./assets/losers/Tiger_lose.mp4";
 import {
   Check,
   Crown,
@@ -58,6 +62,16 @@ const winnerVideoByAnimal: Record<string, string> = {
   tigers: tigerWinnerVideo,
   eagle: eagleWinnerVideo,
   eagles: eagleWinnerVideo,
+};
+
+const loserVideoByAnimal: Record<string, string> = {
+  lions: lionLoserVideo,
+  lion: lionLoserVideo,
+  sheep: sheepLoserVideo,
+  tiger: tigerLoserVideo,
+  tigers: tigerLoserVideo,
+  eagle: eagleLoserVideo,
+  eagles: eagleLoserVideo,
 };
 
 function generateCode(length = 5) {
@@ -133,6 +147,18 @@ function getWinnerVideo(team: Team) {
 
   for (const key of keys) {
     if (winnerVideoByAnimal[key]) return winnerVideoByAnimal[key];
+  }
+
+  return null;
+}
+
+function getLoserVideo(team: Team) {
+  const keys = [team.animal, team.name]
+    .filter(Boolean)
+    .map((value) => String(value).trim().toLowerCase());
+
+  for (const key of keys) {
+    if (loserVideoByAnimal[key]) return loserVideoByAnimal[key];
   }
 
   return null;
@@ -1520,6 +1546,7 @@ function WinnerReveal(props: {
   reducedMotion: boolean;
 }) {
   const winnerVideo = getWinnerVideo(props.winner);
+  const losingTeams = props.teams.filter((team) => team.id !== props.winner.id);
 
   return (
     <motion.section
@@ -1553,6 +1580,41 @@ function WinnerReveal(props: {
             muted
             playsInline
           />
+        </div>
+      )}
+      {losingTeams.length > 0 && (
+        <div className="loser-grid">
+          {losingTeams.map((team) => {
+            const loserVideo = getLoserVideo(team);
+
+            return (
+              <div className="loser-card" key={team.id}>
+                <div className="loser-card-top">
+                  <TeamAvatar
+                    emoji={team.avatar_emoji ?? "⭐"}
+                    image={team.avatar_image ?? ""}
+                    name={team.name}
+                  />
+                  <div>
+                    <strong>{team.name}</strong>
+                    <span>{team.animal}</span>
+                  </div>
+                </div>
+                {loserVideo ? (
+                  <video
+                    className="loser-video"
+                    src={loserVideo}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                  />
+                ) : (
+                  <p className="muted-text">No loss clip loaded for this team yet.</p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
       <AnimatedLeaderboard teams={props.teams} maxScore={props.maxScore} />
