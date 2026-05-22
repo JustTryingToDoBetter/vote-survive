@@ -1,62 +1,53 @@
-import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
 import {
+  Check,
   Crown,
   Gamepad2,
+  Music2,
   Play,
-  Shield,
+  Plus,
+  QrCode,
+  RotateCcw,
   Sparkles,
+  TimerReset,
   Trophy,
-  Users,
+  Volume2,
+  VolumeX,
   Vote,
-  Zap,
 } from "lucide-react";
-import { buildRoundContent, DEFAULT_TEAMS } from "./data/gameContent";
+import { buildRoundDefinition, roundTypeLabels } from "./data/gameContent";
+import {
+  AVATAR_EMOJI_OPTIONS,
+  DEFAULT_TEAM_PRESETS,
+  TEAM_COLOR_OPTIONS,
+} from "./data/teamPresets";
+import { useSoundEffects } from "./hooks/useSoundEffects";
 import { supabase } from "./lib/supabase";
+import type {
+  AppMode,
+  Room,
+  RoundDefinition,
+  RoundRecord,
+  RoundStatus,
+  RoundType,
+  ScoreEvent,
+  Team,
+  TeamDraft,
+  VoteRow,
+} from "./lib/types";
 import "./App.css";
-
-type Room = {
-  id: string;
-  code: string;
-  host_pin: string;
-  status: string;
-};
-
-type Team = {
-  id: string;
-  room_id: string;
-  name: string;
-  leader_code: string;
-  score: number;
-};
-
-type Round = {
-  id: string;
-  room_id: string;
-  question: string;
-  challenge: string;
-  status: "voting" | "locked" | "complete";
-  target_team_id: string | null;
-  created_at: string;
-};
-
-type VoteRow = {
-  id: string;
-  round_id: string;
-  voter_team_id: string;
-  target_team_id: string;
-};
 
 const ROUND_SECONDS = 45;
 
-const teamColors = [
-  "#ff4d6d",
-  "#7c3aed",
-  "#06b6d4",
-  "#f59e0b",
-  "#22c55e",
-  "#fb7185",
-];
+const SCORE_PRESETS = [
+  { label: "+2 Participation", delta: 2, reason: "Participation" },
+  { label: "+5 Good effort", delta: 5, reason: "Good effort" },
+  { label: "+7 Runner up", delta: 7, reason: "Runner up" },
+  { label: "+10 Winner", delta: 10, reason: "Winner" },
+  { label: "-3 Penalty", delta: -3, reason: "Penalty" },
+] as const;
 
 function generateCode(length = 5) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -66,34 +57,94 @@ function generateCode(length = 5) {
   ).join("");
 }
 
-function getInitials(name: string) {
-  return name
-    .replace("Team", "")
-    .trim()
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+function createDefaultDrafts(): TeamDraft[] {
+  return DEFAULT_TEAM_PRESETS.map((preset) => ({
+    id: crypto.randomUUID(),
+    name: preset.name,
+    animal: preset.animal,
+    avatarEmoji: preset.avatarEmoji,
+    avatarImage: preset.avatarImage,
+    color: preset.color,
+    leaderCode: generateCode(4),
+  }));
 }
 
-function teamStyle(index: number) {
+function toRoundRecord(row: Record<string, unknown>): RoundRecord {
+  const roundType = (row.round_type as RoundType | undefined) ?? "voting";
+  const challenge = String(row.challenge ?? "");
+  const prompt = String(row.prompt ?? row.question ?? "");
+  const title =
+    String(row.title ?? "").trim() || roundTypeLabels[roundType] || "Round";
+
   return {
-    "--team-color": teamColors[index % teamColors.length],
-  } as React.CSSProperties;
+    id: String(row.id),
+    room_id: String(row.room_id),
+    round_number: (row.round_number as number | null | undefined) ?? null,
+    round_type: roundType,
+    title,
+    prompt,
+    challenge,
+    scoring_guide: String(row.scoring_guide ?? "Score every team after the round."),
+    twist: (row.twist as string | null | undefined) ?? null,
+    instructions:
+      (row.instructions as string | null | undefined) ??
+      "Follow the host prompt and score every team.",
+    status: (row.status as RoundStatus | undefined) ?? "lobby",
+    target_team_id: (row.target_team_id as string | null | undefined) ?? null,
+    is_final:
+      (row.is_final as boolean | null | undefined) ??
+      roundType === "final_double",
+    created_at: String(row.created_at),
+  };
+}
+
+function normalizeTeam(team: Team, fallbackIndex: number): Team {
+  const preset = DEFAULT_TEAM_PRESETS[fallbackIndex % DEFAULT_TEAM_PRESETS.length];
+
+  return {
+    ...team,
+    animal: team.animal ?? preset.animal,
+    avatar_emoji: team.avatar_emoji ?? preset.avatarEmoji,
+    avatar_image: team.avatar_image ?? preset.avatarImage,
+    color: team.color ?? preset.color,
+  };
+}
+
+function getJoinUrl(roomCode: string) {
+  if (typeof window === "undefined") return `/join?room=${roomCode}`;
+  return `${window.location.origin}/join?room=${roomCode}`;
 }
 
 export default function App() {
-  const [mode, setMode] = useState<"home" | "host" | "leader">("home");
+  const reducedMotion = useReducedMotion();
+  const sound = useSoundEffects();
+  const initialRoomCode =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("room")?.toUpperCase() ?? ""
+      : "";
+  const initialPath =
+    typeof window !== "undefined" && window.location.pathname.startsWith("/join")
+      ? "leader"
+      : "home";
+
+  const [mode, setMode] = useState<AppMode>(initialPath === "leader" ? "home" : "home");
   const [room, setRoom] = useState<Room | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
-  const [activeRound, setActiveRound] = useState<Round | null>(null);
+  const [activeRound, setActiveRound] = useState<RoundRecord | null>(null);
+  const [rounds, setRounds] = useState<RoundRecord[]>([]);
   const [votes, setVotes] = useState<VoteRow[]>([]);
+  const [scoreEvents, setScoreEvents] = useState<ScoreEvent[]>([]);
   const [leaderTeam, setLeaderTeam] = useState<Team | null>(null);
-  const [roomCodeInput, setRoomCodeInput] = useState("");
+  const [teamDrafts, setTeamDrafts] = useState<TeamDraft[]>(createDefaultDrafts);
+  const [roomCodeInput, setRoomCodeInput] = useState(initialRoomCode);
   const [teamCodeInput, setTeamCodeInput] = useState("");
+  const [selectedRoundType, setSelectedRoundType] = useState<RoundType>("voting");
+  const [customScoreInputs, setCustomScoreInputs] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [now, setNow] = useState(Date.now());
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [now, setNow] = useState(0);
+  const [showWinner, setShowWinner] = useState(false);
+  const lastCountdownSoundRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -103,6 +154,11 @@ export default function App() {
   const sortedTeams = useMemo(
     () => [...teams].sort((a, b) => b.score - a.score),
     [teams]
+  );
+
+  const totalVotes = useMemo(
+    () => votes.length,
+    [votes]
   );
 
   const secondsLeft = useMemo(() => {
@@ -131,167 +187,264 @@ export default function App() {
     return teams.find((team) => team.id === activeRound.target_team_id) ?? null;
   }, [activeRound, teams]);
 
-  const rivalTeam = useMemo(() => {
-    if (!targetTeam) return null;
-    return (
-      sortedVoteCounts.find((entry) => entry.team.id !== targetTeam.id)?.team ??
-      null
-    );
-  }, [targetTeam, sortedVoteCounts]);
-
   const leaderHasVoted = useMemo(() => {
     if (!leaderTeam || !activeRound) return false;
     return votes.some((vote) => vote.voter_team_id === leaderTeam.id);
-  }, [leaderTeam, activeRound, votes]);
+  }, [activeRound, leaderTeam, votes]);
 
-  async function createRoom() {
-    setIsLoading(true);
+  const effectiveLeaderTeam = useMemo(() => {
+    if (!leaderTeam) return null;
+    return teams.find((team) => team.id === leaderTeam.id) ?? leaderTeam;
+  }, [leaderTeam, teams]);
 
-    const code = generateCode();
-    const hostPin = generateCode(6);
+  const latestScoreEvent = useMemo(
+    () => scoreEvents.find((event) => !event.undone_at) ?? null,
+    [scoreEvents]
+  );
 
-    const { data: createdRoom, error: roomError } = await supabase
-      .from("rooms")
-      .insert({ code, host_pin: hostPin })
-      .select()
-      .single();
+  const winnerTeam = sortedTeams[0] ?? null;
+  const joinUrl = room ? getJoinUrl(room.code) : "";
 
-    if (roomError) {
-      alert(roomError.message);
-      setIsLoading(false);
-      return;
+  useEffect(() => {
+    if (
+      activeRound?.status === "voting" &&
+      secondsLeft <= 5 &&
+      secondsLeft > 0 &&
+      lastCountdownSoundRef.current !== secondsLeft
+    ) {
+      sound.play("countdown");
+      lastCountdownSoundRef.current = secondsLeft;
     }
 
-    const teamRows = DEFAULT_TEAMS.map((name) => ({
-      room_id: createdRoom.id,
-      name,
-      leader_code: generateCode(4),
-    }));
-
-    const { data: createdTeams, error: teamsError } = await supabase
-      .from("teams")
-      .insert(teamRows)
-      .select();
-
-    if (teamsError) {
-      alert(teamsError.message);
-      setIsLoading(false);
-      return;
+    if (secondsLeft > 5 || secondsLeft === 0) {
+      lastCountdownSoundRef.current = null;
     }
+  }, [activeRound?.status, secondsLeft, sound]);
 
-    setRoom(createdRoom);
-    setTeams(createdTeams ?? []);
-    setMode("host");
-    setIsLoading(false);
-  }
+  const refreshRoomData = useCallback(async (roomId: string) => {
+    try {
+      setLoadError(null);
 
-  async function joinAsLeader() {
-    setIsLoading(true);
+      const [{ data: teamRows, error: teamError }, { data: roundRows, error: roundError }] =
+        await Promise.all([
+          supabase.from("teams").select("*").eq("room_id", roomId),
+          supabase
+            .from("rounds")
+            .select("*")
+            .eq("room_id", roomId)
+            .order("created_at", { ascending: false }),
+        ]);
 
-    const { data: foundRoom, error: roomError } = await supabase
-      .from("rooms")
-      .select("*")
-      .eq("code", roomCodeInput.trim().toUpperCase())
-      .single();
+      if (teamError) throw teamError;
+      if (roundError) throw roundError;
 
-    if (roomError || !foundRoom) {
-      alert("Room not found.");
-      setIsLoading(false);
-      return;
-    }
+      const normalizedTeams = (teamRows ?? []).map((team, index) =>
+        normalizeTeam(team as Team, index)
+      );
+      const mappedRounds = (roundRows ?? []).map((row) =>
+        toRoundRecord(row as Record<string, unknown>)
+      );
 
-    const { data: foundTeam, error: teamError } = await supabase
-      .from("teams")
-      .select("*")
-      .eq("room_id", foundRoom.id)
-      .eq("leader_code", teamCodeInput.trim().toUpperCase())
-      .single();
+      setTeams(normalizedTeams);
+      setRounds(mappedRounds);
+      setActiveRound(mappedRounds[0] ?? null);
 
-    if (teamError || !foundTeam) {
-      alert("Team code not found.");
-      setIsLoading(false);
-      return;
-    }
+      const latestRound = mappedRounds[0];
 
-    setRoom(foundRoom);
-    setLeaderTeam(foundTeam);
-    setMode("leader");
-    setIsLoading(false);
-  }
+      if (!latestRound) {
+        setVotes([]);
+      } else {
+        const { data: voteRows, error: voteError } = await supabase
+          .from("votes")
+          .select("*")
+          .eq("round_id", latestRound.id);
 
-  async function refreshRoomData(roomId: string) {
-    const [{ data: teamRows }, { data: roundRows }] = await Promise.all([
-      supabase
-        .from("teams")
+        if (voteError) throw voteError;
+        setVotes((voteRows ?? []) as VoteRow[]);
+      }
+
+      const { data: scoreRows, error: scoreError } = await supabase
+        .from("score_events")
         .select("*")
         .eq("room_id", roomId)
-        .order("score", { ascending: false }),
-      supabase
-        .from("rounds")
-        .select("*")
-        .eq("room_id", roomId)
-        .order("created_at", { ascending: false })
-        .limit(1),
-    ]);
+        .order("created_at", { ascending: false });
 
-    setTeams(teamRows ?? []);
-
-    const latestRound = roundRows?.[0] ?? null;
-    setActiveRound(latestRound);
-
-    if (!latestRound) {
-      setVotes([]);
-      return;
+      if (scoreError) {
+        setScoreEvents([]);
+      } else {
+        setScoreEvents((scoreRows ?? []) as ScoreEvent[]);
+      }
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Unable to refresh room right now."
+      );
     }
-
-    const { data: voteRows } = await supabase
-      .from("votes")
-      .select("*")
-      .eq("round_id", latestRound.id);
-
-    setVotes(voteRows ?? []);
-  }
+  }, []);
 
   useEffect(() => {
     if (!room) return;
 
-    refreshRoomData(room.id);
+    const refreshTimer = window.setTimeout(() => {
+      void refreshRoomData(room.id);
+    }, 0);
 
     const channel = supabase
       .channel(`room-${room.id}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "teams" },
-        () => refreshRoomData(room.id)
+        { event: "*", schema: "public", table: "teams", filter: `room_id=eq.${room.id}` },
+        () => void refreshRoomData(room.id)
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "rounds" },
-        () => refreshRoomData(room.id)
+        { event: "*", schema: "public", table: "rounds", filter: `room_id=eq.${room.id}` },
+        () => void refreshRoomData(room.id)
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "votes" },
-        () => refreshRoomData(room.id)
+        () => void refreshRoomData(room.id)
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "score_events", filter: `room_id=eq.${room.id}` },
+        () => void refreshRoomData(room.id)
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      window.clearTimeout(refreshTimer);
+      void supabase.removeChannel(channel);
     };
-  }, [room?.id]);
+  }, [refreshRoomData, room]);
 
-  async function startRound() {
+  async function createRoomFromSetup() {
+    if (teamDrafts.length < 2) {
+      setLoadError("Add at least two teams before starting the game.");
+      return;
+    }
+
+    setIsLoading(true);
+    setLoadError(null);
+
+    try {
+      const code = generateCode();
+      const hostPin = generateCode(6);
+
+      const { data: createdRoom, error: roomError } = await supabase
+        .from("rooms")
+        .insert({ code, host_pin: hostPin, status: "lobby" })
+        .select()
+        .single();
+
+      if (roomError || !createdRoom) throw roomError ?? new Error("Room creation failed.");
+
+      const { data: createdTeams, error: teamsError } = await supabase
+        .from("teams")
+        .insert(
+          teamDrafts.map((team) => ({
+            room_id: createdRoom.id,
+            name: team.name,
+            leader_code: team.leaderCode,
+            score: 0,
+            animal: team.animal,
+            avatar_emoji: team.avatarEmoji,
+            avatar_image: team.avatarImage,
+            color: team.color,
+          }))
+        )
+        .select();
+
+      if (teamsError) throw teamsError;
+
+      setRoom(createdRoom as Room);
+      setTeams((createdTeams ?? []) as Team[]);
+      setMode("host");
+      sound.play("roundStart");
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Unable to create room right now."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function joinAsLeader() {
+    setIsLoading(true);
+    setLoadError(null);
+
+    try {
+      const { data: foundRoom, error: roomError } = await supabase
+        .from("rooms")
+        .select("*")
+        .eq("code", roomCodeInput.trim().toUpperCase())
+        .single();
+
+      if (roomError || !foundRoom) throw new Error("Room not found.");
+
+      const { data: foundTeam, error: teamError } = await supabase
+        .from("teams")
+        .select("*")
+        .eq("room_id", foundRoom.id)
+        .eq("leader_code", teamCodeInput.trim().toUpperCase())
+        .single();
+
+      if (teamError || !foundTeam) throw new Error("Team code not found.");
+
+      setRoom(foundRoom as Room);
+      setLeaderTeam(normalizeTeam(foundTeam as Team, 0));
+      setMode("leader");
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.pathname = "/join";
+        url.searchParams.set("room", foundRoom.code);
+        window.history.replaceState({}, "", url.toString());
+      }
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to join room.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function startRound(roundType?: RoundType) {
     if (!room) return;
 
-    const round = buildRoundContent();
+    setLoadError(null);
 
-    await supabase.from("rounds").insert({
-      room_id: room.id,
-      question: round.question,
-      challenge: round.challenge,
-      status: "voting",
-    });
+    try {
+      const definition = buildRoundDefinition(roundType);
+      const nextRoundNumber = (rounds[0]?.round_number ?? 0) + 1;
+      const status: RoundStatus = definition.requiresVoting ? "voting" : "scoring";
+
+      const { error } = await supabase.from("rounds").insert({
+        room_id: room.id,
+        round_number: nextRoundNumber,
+        round_type: definition.type,
+        title: definition.title,
+        prompt: definition.prompt,
+        question: definition.prompt,
+        challenge: definition.challenge,
+        scoring_guide: definition.scoringGuide,
+        instructions: definition.instructions,
+        twist: definition.twist ?? null,
+        status,
+        is_final: definition.isFinal ?? false,
+      });
+
+      if (error) throw error;
+
+      await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
+
+      setSelectedRoundType(definition.type);
+      setShowWinner(false);
+      sound.play("roundStart");
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Unable to start the round."
+      );
+    }
   }
 
   async function submitVote(targetTeamId: string) {
@@ -306,7 +459,12 @@ export default function App() {
       { onConflict: "round_id,voter_team_id" }
     );
 
-    if (error) alert(error.message);
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    sound.play("voteSubmit");
   }
 
   async function lockVotes() {
@@ -314,45 +472,176 @@ export default function App() {
 
     const winner = sortedVoteCounts[0];
 
-    await supabase
+    const { error } = await supabase
       .from("rounds")
       .update({
-        status: "locked",
+        status: "scoring",
         target_team_id: winner?.team.id ?? null,
       })
       .eq("id", activeRound.id);
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    sound.play("reveal");
   }
-async function updateTeamScore(teamId: string, delta: number) {
-  const selectedTeam = teams.find((team) => team.id === teamId);
-  if (!selectedTeam) return;
 
-  await supabase
-    .from("teams")
-    .update({ score: selectedTeam.score + delta })
-    .eq("id", teamId);
-}
+  async function applyScore(teamId: string, delta: number, reason: string) {
+    if (!room) return;
 
-async function completeRound() {
-  if (!activeRound) return;
+    const team = teams.find((entry) => entry.id === teamId);
+    if (!team) return;
 
-  await supabase
-    .from("rounds")
-    .update({ status: "complete" })
-    .eq("id", activeRound.id);
-}
+    const multiplier = activeRound?.round_type === "final_double" ? 2 : 1;
+    const finalDelta = delta * multiplier;
 
+    const { error: updateError } = await supabase
+      .from("teams")
+      .update({ score: team.score + finalDelta })
+      .eq("id", teamId);
+
+    if (updateError) {
+      setLoadError(updateError.message);
+      return;
+    }
+
+    const { error: eventError } = await supabase.from("score_events").insert({
+      room_id: room.id,
+      round_id: activeRound?.id ?? null,
+      team_id: teamId,
+      delta: finalDelta,
+      reason,
+    });
+
+    if (eventError) {
+      setLoadError(eventError.message);
+      return;
+    }
+
+    sound.play("score");
+  }
+
+  async function undoLastScore() {
+    if (!latestScoreEvent) return;
+
+    const team = teams.find((entry) => entry.id === latestScoreEvent.team_id);
+    if (!team) return;
+
+    const { error: teamError } = await supabase
+      .from("teams")
+      .update({ score: team.score - latestScoreEvent.delta })
+      .eq("id", team.id);
+
+    if (teamError) {
+      setLoadError(teamError.message);
+      return;
+    }
+
+    const { error: eventError } = await supabase
+      .from("score_events")
+      .update({ undone_at: new Date().toISOString() })
+      .eq("id", latestScoreEvent.id);
+
+    if (eventError) {
+      setLoadError(eventError.message);
+    }
+  }
+
+  async function completeRound() {
+    if (!activeRound) return;
+
+    const nextStatus: RoundStatus = activeRound.round_type === "final_double" ? "winner" : "complete";
+
+    const { error } = await supabase
+      .from("rounds")
+      .update({ status: nextStatus })
+      .eq("id", activeRound.id);
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    if (activeRound.round_type === "final_double") {
+      setShowWinner(true);
+      sound.play("winner");
+      return;
+    }
+
+    await supabase.from("rooms").update({ status: "lobby" }).eq("id", activeRound.room_id);
+  }
+
+  async function revealWinner() {
+    if (!room) return;
+    setShowWinner(true);
+    await supabase.from("rooms").update({ status: "winner" }).eq("id", room.id);
+    sound.play("winner");
+  }
+
+  function updateDraft(
+    draftId: string,
+    field: keyof TeamDraft,
+    value: string
+  ) {
+    setTeamDrafts((current) =>
+      current.map((draft) =>
+        draft.id === draftId ? { ...draft, [field]: value } : draft
+      )
+    );
+  }
+
+  function addTeamDraft() {
+    setTeamDrafts((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        name: `Team ${current.length + 1}`,
+        animal: "Crew",
+        avatarEmoji: "⭐",
+        avatarImage: "",
+        color: TEAM_COLOR_OPTIONS[current.length % TEAM_COLOR_OPTIONS.length],
+        leaderCode: generateCode(4),
+      },
+    ]);
+  }
+
+  function removeTeamDraft(draftId: string) {
+    setTeamDrafts((current) =>
+      current.length <= 2 ? current : current.filter((draft) => draft.id !== draftId)
+    );
+  }
+
+  const shouldShowJoinFocus = initialPath === "leader";
 
   return (
     <AnimatePresence mode="wait">
       {mode === "home" && (
         <HomeScreen
           isLoading={isLoading}
+          loadError={loadError}
           roomCodeInput={roomCodeInput}
           teamCodeInput={teamCodeInput}
           setRoomCodeInput={setRoomCodeInput}
           setTeamCodeInput={setTeamCodeInput}
-          createRoom={createRoom}
           joinAsLeader={joinAsLeader}
+          goToSetup={() => setMode("setup")}
+          shouldShowJoinFocus={shouldShowJoinFocus}
+        />
+      )}
+
+      {mode === "setup" && (
+        <HostSetupScreen
+          drafts={teamDrafts}
+          loadError={loadError}
+          isLoading={isLoading}
+          setDraftField={updateDraft}
+          resetPresets={() => setTeamDrafts(createDefaultDrafts())}
+          addTeamDraft={addTeamDraft}
+          removeTeamDraft={removeTeamDraft}
+          createRoom={createRoomFromSetup}
+          backHome={() => setMode("home")}
         />
       )}
 
@@ -362,26 +651,43 @@ async function completeRound() {
           teams={teams}
           sortedTeams={sortedTeams}
           activeRound={activeRound}
+          rounds={rounds}
+          scoreEvents={scoreEvents}
           voteCounts={voteCounts}
-          sortedVoteCounts={sortedVoteCounts}
           targetTeam={targetTeam}
-          rivalTeam={rivalTeam}
           secondsLeft={secondsLeft}
+          totalVotes={totalVotes}
+          loadError={loadError}
+          selectedRoundType={selectedRoundType}
+          setSelectedRoundType={setSelectedRoundType}
+          soundEnabled={sound.enabled}
+          toggleSound={() => sound.setEnabled(!sound.enabled)}
           startRound={startRound}
           lockVotes={lockVotes}
-          updateTeamScore={updateTeamScore}
+          applyScore={applyScore}
           completeRound={completeRound}
+          undoLastScore={undoLastScore}
+          latestScoreEvent={latestScoreEvent}
+          customScoreInputs={customScoreInputs}
+          setCustomScoreInputs={setCustomScoreInputs}
+          revealWinner={revealWinner}
+          showWinner={showWinner}
+          winnerTeam={winnerTeam}
+          joinUrl={joinUrl}
+          reducedMotion={Boolean(reducedMotion)}
         />
       )}
 
-      {mode === "leader" && room && leaderTeam && (
+      {mode === "leader" && room && effectiveLeaderTeam && (
         <LeaderScreen
           room={room}
           teams={teams}
-          leaderTeam={leaderTeam}
+          leaderTeam={effectiveLeaderTeam}
           activeRound={activeRound}
           secondsLeft={secondsLeft}
           leaderHasVoted={leaderHasVoted}
+          soundEnabled={sound.enabled}
+          toggleSound={() => sound.setEnabled(!sound.enabled)}
           submitVote={submitVote}
         />
       )}
@@ -391,12 +697,14 @@ async function completeRound() {
 
 function HomeScreen(props: {
   isLoading: boolean;
+  loadError: string | null;
   roomCodeInput: string;
   teamCodeInput: string;
   setRoomCodeInput: (value: string) => void;
   setTeamCodeInput: (value: string) => void;
-  createRoom: () => void;
   joinAsLeader: () => void;
+  goToSetup: () => void;
+  shouldShowJoinFocus: boolean;
 }) {
   return (
     <motion.main
@@ -405,160 +713,256 @@ function HomeScreen(props: {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
     >
-      <nav className="top-nav">
-        <div className="brand">
-          <div className="brand-mark">
-            <Shield size={22} />
-          </div>
-          <div>
-            <strong>Vote & Survive</strong>
-            <span>LIVE</span>
-          </div>
-        </div>
-
-        <div className="nav-links">
-          <a>Home</a>
-          <a>How It Works</a>
-          <a>Game Modes</a>
-          <a>Leaderboard</a>
-        </div>
-
-        <button className="nav-cta" onClick={props.createRoom}>
-          Start Game
-        </button>
-      </nav>
-
-      <section className="hero-grid">
+      <section className="hero-shell">
         <div className="hero-copy">
-          <div className="pill">
-            <Sparkles size={16} />
-            Youth Night Game Show
-          </div>
-
-          <h1>
-            Vote Fast.
-            <br />
-            Challenge Hard.
-            <br />
-            <span>Win Big.</span>
-          </h1>
-
+          <span className="eyebrow">Live youth game platform</span>
+          <h1>Bright, loud, phone-first fun for your next team night.</h1>
           <p>
-            Leaders join from their phones, vote against rival teams, trigger
-            challenge battles, and fight for the top of the live leaderboard.
+            Create a room, set up your teams, launch voting or all-play rounds,
+            score fast, and reveal a dramatic winner on the big screen.
           </p>
 
           <div className="hero-actions">
-            <button className="primary-btn" onClick={props.createRoom}>
+            <button className="primary-btn" onClick={props.goToSetup}>
               <Play size={18} />
-              {props.isLoading ? "Creating..." : "Start a Game"}
+              Host a Game
             </button>
-            <a className="secondary-btn" href="#leader-login">
-              Join with Code
-            </a>
           </div>
 
-          <div className="hero-stats">
-            <Stat icon={<Users size={18} />} value="4+" label="Teams" />
-            <Stat icon={<Vote size={18} />} value="Live" label="Voting" />
-            <Stat icon={<Trophy size={18} />} value="30m" label="Game Time" />
+          <div className="hero-highlights">
+            <InfoChip icon={<Vote size={16} />} text="Realtime voting" />
+            <InfoChip icon={<Trophy size={16} />} text="Live leaderboard" />
+            <InfoChip icon={<Sparkles size={16} />} text="Final round reveal" />
           </div>
         </div>
 
-        <div className="mascot-panel">
-          <div className="confetti-dot dot-one" />
-          <div className="confetti-dot dot-two" />
-          <div className="confetti-dot dot-three" />
+        <div
+          className={`join-card ${props.shouldShowJoinFocus ? "join-card-focus" : ""}`}
+        >
+          <p className="section-kicker">Leader Join</p>
+          <h2>Join from your phone</h2>
+          <p>Scan the QR from the host or enter your room and team code.</p>
 
-          <motion.div
-            className="panda-card"
-            animate={{ y: [0, -10, 0], rotate: [0, -1, 0] }}
-            transition={{ duration: 3, repeat: Infinity }}
-          >
-            <div className="panda-face">
-              <span className="ear left" />
-              <span className="ear right" />
-              <span className="eye left" />
-              <span className="eye right" />
-              <span className="nose" />
-              <span className="smile" />
-            </div>
+          <div className="join-form">
+            <input
+              placeholder="Room code"
+              value={props.roomCodeInput}
+              onChange={(event) =>
+                props.setRoomCodeInput(event.target.value.toUpperCase())
+              }
+            />
+            <input
+              placeholder="Team code"
+              value={props.teamCodeInput}
+              onChange={(event) =>
+                props.setTeamCodeInput(event.target.value.toUpperCase())
+              }
+            />
+            <button onClick={props.joinAsLeader} disabled={props.isLoading}>
+              {props.isLoading ? "Joining..." : "Join team"}
+            </button>
+          </div>
 
-            <div className="panda-sign">
-              <strong>LET'S GO</strong>
-              <span>TEAM!</span>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      <section className="feature-row">
-        <FeatureCard
-          icon={<Vote />}
-          title="Live Rival Voting"
-          text="Leaders vote for other teams. No self-voting. Maximum drama."
-        />
-        <FeatureCard
-          icon={<Zap />}
-          title="Challenge Battles"
-          text="The most-voted team enters a face-off, steal round, or quiz burst."
-        />
-        <FeatureCard
-          icon={<Crown />}
-          title="Leaderboard Energy"
-          text="Scores update live so every round feels like a comeback chance."
-        />
-      </section>
-
-      <section id="leader-login" className="join-panel">
-        <div>
-          <p className="section-kicker">Leader Login</p>
-          <h2>Join the room from your phone</h2>
-          <p>
-            The host creates a room. Each leader gets a team code and votes from
-            their own device.
-          </p>
-        </div>
-
-        <div className="join-form">
-          <input
-            placeholder="Room code"
-            value={props.roomCodeInput}
-            onChange={(event) =>
-              props.setRoomCodeInput(event.target.value.toUpperCase())
-            }
-          />
-          <input
-            placeholder="Team code"
-            value={props.teamCodeInput}
-            onChange={(event) =>
-              props.setTeamCodeInput(event.target.value.toUpperCase())
-            }
-          />
-          <button onClick={props.joinAsLeader}>Join as Leader</button>
+          {props.loadError && <p className="error-banner">{props.loadError}</p>}
         </div>
       </section>
     </motion.main>
   );
 }
 
+function HostSetupScreen(props: {
+  drafts: TeamDraft[];
+  loadError: string | null;
+  isLoading: boolean;
+  setDraftField: (draftId: string, field: keyof TeamDraft, value: string) => void;
+  resetPresets: () => void;
+  addTeamDraft: () => void;
+  removeTeamDraft: (draftId: string) => void;
+  createRoom: () => void;
+  backHome: () => void;
+}) {
+  return (
+    <motion.main
+      className="setup-page"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <header className="setup-header">
+        <div>
+          <p className="section-kicker">Host Setup</p>
+          <h1>Build the teams before the room goes live</h1>
+        </div>
+
+        <div className="header-actions">
+          <button className="ghost-btn" onClick={props.backHome}>
+            Back
+          </button>
+          <button className="ghost-btn" onClick={props.resetPresets}>
+            Reset presets
+          </button>
+          <button className="primary-btn" onClick={props.createRoom}>
+            {props.isLoading ? "Creating..." : "Create room"}
+          </button>
+        </div>
+      </header>
+
+      {props.loadError && <p className="error-banner">{props.loadError}</p>}
+
+      <section className="setup-grid">
+        {props.drafts.map((draft, index) => (
+          <article className="setup-card" key={draft.id} style={{ "--team-color": draft.color } as React.CSSProperties}>
+            <div className="setup-card-top">
+              <TeamAvatar
+                emoji={draft.avatarEmoji}
+                image={draft.avatarImage}
+                name={draft.name}
+                className="team-avatar-display"
+              />
+              <div>
+                <p className="section-kicker">Team {index + 1}</p>
+                <strong>{draft.leaderCode}</strong>
+              </div>
+            </div>
+
+            <label>
+              Team name
+              <input
+                value={draft.name}
+                onChange={(event) =>
+                  props.setDraftField(draft.id, "name", event.target.value)
+                }
+              />
+            </label>
+
+            <label>
+              Animal identity
+              <input
+                value={draft.animal}
+                onChange={(event) =>
+                  props.setDraftField(draft.id, "animal", event.target.value)
+                }
+              />
+            </label>
+
+            <div className="picker-group">
+              <span>Avatar emoji</span>
+              <div className="emoji-picker">
+                {AVATAR_EMOJI_OPTIONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    className={draft.avatarEmoji === emoji ? "emoji-option active" : "emoji-option"}
+                    onClick={() => props.setDraftField(draft.id, "avatarEmoji", emoji)}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="picker-group">
+              <span>Team color</span>
+              <div className="color-picker">
+                {TEAM_COLOR_OPTIONS.map((color) => (
+                  <button
+                    key={color}
+                    className={draft.color === color ? "color-option active" : "color-option"}
+                    style={{ background: color }}
+                    onClick={() => props.setDraftField(draft.id, "color", color)}
+                    aria-label={`Use color ${color}`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <label>
+              Leader code
+              <div className="inline-input-row">
+                <input
+                  value={draft.leaderCode}
+                  onChange={(event) =>
+                    props.setDraftField(
+                      draft.id,
+                      "leaderCode",
+                      event.target.value.toUpperCase()
+                    )
+                  }
+                />
+                <button
+                  className="ghost-btn"
+                  onClick={() => props.setDraftField(draft.id, "leaderCode", generateCode(4))}
+                >
+                  Regenerate
+                </button>
+              </div>
+            </label>
+
+            <button
+              className="danger-link"
+              onClick={() => props.removeTeamDraft(draft.id)}
+              disabled={props.drafts.length <= 2}
+            >
+              Remove team
+            </button>
+          </article>
+        ))}
+
+        <button className="add-team-card" onClick={props.addTeamDraft}>
+          <Plus size={24} />
+          Add another team
+        </button>
+      </section>
+    </motion.main>
+  );
+}
+
 function HostScreen(props: {
- room: Room;
+  room: Room;
   teams: Team[];
   sortedTeams: Team[];
-  activeRound: Round | null;
+  activeRound: RoundRecord | null;
+  rounds: RoundRecord[];
+  scoreEvents: ScoreEvent[];
   voteCounts: { team: Team; count: number }[];
-  sortedVoteCounts: { team: Team; count: number }[];
   targetTeam: Team | null;
-  rivalTeam: Team | null;
   secondsLeft: number;
-  startRound: () => void;
+  totalVotes: number;
+  loadError: string | null;
+  selectedRoundType: RoundType;
+  setSelectedRoundType: (value: RoundType) => void;
+  soundEnabled: boolean;
+  toggleSound: () => void;
+  startRound: (type?: RoundType) => void;
   lockVotes: () => void;
-  updateTeamScore: (teamId: string, delta: number) => void;
+  applyScore: (teamId: string, delta: number, reason: string) => void;
   completeRound: () => void;
+  undoLastScore: () => void;
+  latestScoreEvent: ScoreEvent | null;
+  customScoreInputs: Record<string, string>;
+  setCustomScoreInputs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  revealWinner: () => void;
+  showWinner: boolean;
+  winnerTeam: Team | null;
+  joinUrl: string;
+  reducedMotion: boolean;
 }) {
-  const totalVotes = props.voteCounts.reduce((sum, item) => sum + item.count, 0);
-  const maxScore = Math.max(1, ...props.teams.map((team) => team.score));
+  const maxVotes = Math.max(1, ...props.voteCounts.map((entry) => entry.count));
+  const maxScore = Math.max(1, ...props.sortedTeams.map((team) => team.score));
+  const activeDefinition = props.activeRound
+    ? {
+        type: props.activeRound.round_type,
+        title: props.activeRound.title,
+        prompt: props.activeRound.prompt,
+        challenge: props.activeRound.challenge,
+        scoringGuide: props.activeRound.scoring_guide,
+        instructions: props.activeRound.instructions ?? "",
+        twist: props.activeRound.twist ?? undefined,
+        requiresVoting:
+          props.activeRound.round_type === "voting" ||
+          props.activeRound.round_type === "steal",
+        isFinal: props.activeRound.is_final ?? false,
+      }
+    : null;
 
   return (
     <motion.main
@@ -569,119 +973,215 @@ function HostScreen(props: {
     >
       <header className="game-header">
         <div>
-          <p className="section-kicker">Host Screen</p>
-          <h1>Room Code: {props.room.code}</h1>
+          <p className="section-kicker">Host screen</p>
+          <h1>{props.room.code}</h1>
+          <p className="header-helper">
+            Team leaders join with the room code and their team code.
+          </p>
         </div>
 
-        <button className="primary-btn" onClick={props.startRound}>
-          <Play size={18} />
-          New Round
-        </button>
+        <div className="header-actions">
+          <button className="ghost-btn" onClick={props.toggleSound}>
+            {props.soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+            {props.soundEnabled ? "Sound on" : "Sound off"}
+          </button>
+          <button className="primary-btn" onClick={() => props.startRound()}>
+            <Sparkles size={18} />
+            Random round
+          </button>
+        </div>
       </header>
 
+      {props.loadError && <p className="error-banner">{props.loadError}</p>}
+
       <section className="host-grid">
-        <div className="game-card current-round-card">
-          <div className="card-title-row">
-            <div>
-              <p className="section-kicker">Current Round</p>
-              <h2>
-                {props.activeRound
-                  ? props.activeRound.question
-                  : "Start the first round"}
-              </h2>
+        <div className="host-main-column">
+          <div className="game-card">
+            <div className="round-toolbar">
+              <div>
+                <p className="section-kicker">Round control</p>
+                <h2>Choose the next moment</h2>
+              </div>
+
+              <div className="round-controls">
+                <select
+                  value={props.selectedRoundType}
+                  onChange={(event) =>
+                    props.setSelectedRoundType(event.target.value as RoundType)
+                  }
+                >
+                  {Object.entries(roundTypeLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <button className="primary-btn" onClick={() => props.startRound(props.selectedRoundType)}>
+                  <Play size={18} />
+                  Start chosen round
+                </button>
+              </div>
             </div>
+          </div>
+
+          <div className={`game-card ${props.activeRound?.round_type === "final_double" ? "final-round-card" : ""}`}>
+            {activeDefinition ? (
+              <RoundReveal
+                round={activeDefinition}
+                secondsLeft={props.secondsLeft}
+                activeStatus={props.activeRound?.status ?? "lobby"}
+              />
+            ) : (
+              <EmptyHostState />
+            )}
 
             {props.activeRound?.status === "voting" && (
-              <TimerRing secondsLeft={props.secondsLeft} />
+              <div className="voting-panel">
+                <div className="live-row">
+                  <div className="live-pill">
+                    <Vote size={16} />
+                    {props.totalVotes} votes in
+                  </div>
+                  <TimerRing secondsLeft={props.secondsLeft} />
+                </div>
+
+                <div className="vote-bars">
+                  {props.voteCounts.map((entry, index) => (
+                    <AnimatedVoteBar
+                      key={entry.team.id}
+                      team={entry.team}
+                      count={entry.count}
+                      max={maxVotes}
+                      index={index}
+                    />
+                  ))}
+                </div>
+
+                <button className="danger-btn" onClick={props.lockVotes}>
+                  Lock votes and reveal pressure team
+                </button>
+              </div>
+            )}
+
+            {props.activeRound && props.activeRound.status !== "voting" && (
+              <ChallengeRevealCard
+                round={props.activeRound}
+                targetTeam={props.targetTeam}
+              />
             )}
           </div>
 
-          {!props.activeRound && (
-            <p className="muted-text">
-              Click New Round when everyone is ready. Leaders will vote from
-              their phones.
-            </p>
-          )}
+          {props.activeRound && props.activeRound.status !== "complete" && props.activeRound.status !== "winner" && (
+            <div className="game-card">
+              <div className="score-panel-top">
+                <div>
+                  <p className="section-kicker">Host scoring</p>
+                  <h2>Score every team fast</h2>
+                </div>
 
-          {props.activeRound?.status === "voting" && (
-            <>
-              <div className="live-badge">
-                <span />
-                Voting is live
+                <button
+                  className="ghost-btn"
+                  onClick={props.undoLastScore}
+                  disabled={!props.latestScoreEvent}
+                >
+                  <RotateCcw size={18} />
+                  Undo last
+                </button>
               </div>
 
-              <div className="vote-bars">
-                {props.voteCounts.map((entry, index) => (
-                  <VoteBar
-                    key={entry.team.id}
-                    team={entry.team}
-                    count={entry.count}
-                    max={Math.max(1, props.sortedVoteCounts[0]?.count ?? 1)}
-                    index={index}
+              <div className="score-grid">
+                {props.sortedTeams.map((team, index) => (
+                  <ScoreCard
+                    key={team.id}
+                    team={team}
+                    rank={index + 1}
+                    customValue={props.customScoreInputs[team.id] ?? ""}
+                    onCustomChange={(value) =>
+                      props.setCustomScoreInputs((current) => ({
+                        ...current,
+                        [team.id]: value,
+                      }))
+                    }
+                    onApplyCustom={() => {
+                      const parsed = Number(props.customScoreInputs[team.id] ?? 0);
+                      if (Number.isNaN(parsed) || parsed === 0) return;
+                      void props.applyScore(team.id, parsed, "Custom score");
+                      props.setCustomScoreInputs((current) => ({
+                        ...current,
+                        [team.id]: "",
+                      }));
+                    }}
+                    onPreset={(delta, reason) => void props.applyScore(team.id, delta, reason)}
                   />
                 ))}
               </div>
 
-              <button className="danger-btn" onClick={props.lockVotes}>
-                Lock Votes & Reveal Challenge
-              </button>
-            </>
-          )}
-
-          {props.activeRound?.status === "locked" && props.targetTeam && (
-            <AllTeamScoringPanel
-              teams={props.teams}
-              sortedTeams={props.sortedTeams}
-              targetTeam={props.targetTeam}
-              challenge={props.activeRound.challenge}
-              updateTeamScore={props.updateTeamScore}
-              completeRound={props.completeRound}
-            />
-          )}
-
-          {props.activeRound?.status === "complete" && (
-            <div className="complete-panel">
-              <Trophy size={34} />
-              <h3>Round Complete</h3>
-              <p>Start a new round to keep the comeback alive.</p>
+              <div className="score-footer">
+                <p className="muted-text">
+                  {props.activeRound.round_type === "final_double"
+                    ? "Final round scoring is doubled automatically."
+                    : "Preset scoring keeps the host flow moving fast."}
+                </p>
+                <button className="primary-btn" onClick={props.completeRound}>
+                  <Check size={18} />
+                  {props.activeRound.round_type === "final_double"
+                    ? "Finish final round"
+                    : "Complete round"}
+                </button>
+              </div>
             </div>
           )}
+
+          {(props.showWinner || props.activeRound?.status === "winner") && props.winnerTeam && (
+          <WinnerReveal
+            winner={props.winnerTeam}
+            teams={props.sortedTeams}
+            maxScore={maxScore}
+            reducedMotion={Boolean(props.reducedMotion)}
+          />
+          )}
         </div>
 
-        <div className="game-card">
-          <p className="section-kicker">Live Leaderboard</p>
-
-          <div className="leaderboard">
-            {props.sortedTeams.map((team, index) => (
-              <LeaderboardScoreCard
-                key={team.id}
-                team={team}
-                rank={index + 1}
-                index={index}
-                maxScore={maxScore}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="game-card">
-          <p className="section-kicker">Team Codes</p>
-
-          <div className="team-code-grid">
-            {props.teams.map((team, index) => (
-              <div className="team-code-card" key={team.id} style={teamStyle(index)}>
-                <div className="team-avatar">{getInitials(team.name)}</div>
-                <div>
-                  <strong>{team.name}</strong>
-                  <span>{team.leader_code}</span>
-                </div>
+        <div className="host-side-column">
+          <div className="game-card">
+            <div className="panel-topline">
+              <div>
+                <p className="section-kicker">Lobby join</p>
+                <h3>Scan to join</h3>
               </div>
-            ))}
+              <QrCode size={20} />
+            </div>
+
+            <div className="qr-wrap">
+              <QRCodeSVG value={props.joinUrl} size={164} />
+              <p className="muted-text">Leaders scan, then enter their team code.</p>
+            </div>
+
+            <div className="team-code-list">
+              {props.teams.map((team, index) => (
+                <TeamCodeRow key={team.id} team={team} index={index} />
+              ))}
+            </div>
           </div>
 
-          <div className="mini-info">
-            <Users size={18} />
-            {totalVotes} votes this round
+          <div className="game-card">
+            <p className="section-kicker">Live leaderboard</p>
+            <AnimatedLeaderboard teams={props.sortedTeams} maxScore={maxScore} />
+            {props.activeRound?.round_type === "final_double" && (
+              <button className="ghost-btn wide-btn" onClick={props.revealWinner}>
+                <Crown size={18} />
+                Reveal winner now
+              </button>
+            )}
+          </div>
+
+          <div className="game-card">
+            <p className="section-kicker">Game history</p>
+            <GameHistoryPanel
+              rounds={props.rounds}
+              scoreEvents={props.scoreEvents}
+              teams={props.teams}
+            />
           </div>
         </div>
       </section>
@@ -693,11 +1193,21 @@ function LeaderScreen(props: {
   room: Room;
   teams: Team[];
   leaderTeam: Team;
-  activeRound: Round | null;
+  activeRound: RoundRecord | null;
   secondsLeft: number;
   leaderHasVoted: boolean;
+  soundEnabled: boolean;
+  toggleSound: () => void;
   submitVote: (targetTeamId: string) => void;
 }) {
+  const voteOpen =
+    Boolean(
+      props.activeRound &&
+        (props.activeRound.round_type === "voting" ||
+          props.activeRound.round_type === "steal") &&
+        props.activeRound.status === "voting"
+    );
+
   return (
     <motion.main
       className="leader-shell"
@@ -709,78 +1219,139 @@ function LeaderScreen(props: {
         <div>
           <p className="section-kicker">Room {props.room.code}</p>
           <h1>{props.leaderTeam.name}</h1>
+          <p className="header-helper">You are voting for your team tonight.</p>
         </div>
 
-        {props.activeRound?.status === "voting" && (
-          <TimerRing secondsLeft={props.secondsLeft} compact />
-        )}
+        <div className="header-actions">
+          <button className="ghost-btn" onClick={props.toggleSound}>
+            {props.soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
+          {voteOpen && <TimerRing secondsLeft={props.secondsLeft} compact />}
+        </div>
       </header>
 
       {!props.activeRound && (
         <div className="game-card waiting-card">
-          <Gamepad2 size={44} />
-          <h2>Waiting for host...</h2>
-          <p>The next vote will appear here.</p>
+          <Gamepad2 size={48} />
+          <h2>Waiting for the host</h2>
+          <p>The next round will appear here on your phone.</p>
         </div>
       )}
 
       {props.activeRound && (
         <section className="game-card leader-vote-card">
-          <p className="section-kicker">
-            {props.activeRound.status === "voting"
-              ? "Vote Against a Team"
-              : "Round Locked"}
-          </p>
+          <RoundReveal
+            round={{
+              type: props.activeRound.round_type,
+              title: props.activeRound.title,
+              prompt: props.activeRound.prompt,
+              challenge: props.activeRound.challenge,
+              instructions: props.activeRound.instructions ?? "",
+              scoringGuide: props.activeRound.scoring_guide,
+              twist: props.activeRound.twist ?? undefined,
+              requiresVoting: voteOpen,
+              isFinal: props.activeRound.is_final ?? false,
+            }}
+            secondsLeft={props.secondsLeft}
+            activeStatus={props.activeRound.status}
+            compact
+          />
 
-          <h2>{props.activeRound.question}</h2>
-
-          {props.activeRound.status === "voting" && (
+          {voteOpen ? (
             <>
               <p className="muted-text">
-                Choose the team that should enter the arena. You cannot vote for
-                yourself.
+                Choose the team you want under pressure. You cannot vote for yourself.
               </p>
 
               <div className="vote-tile-grid">
                 {props.teams
                   .filter((team) => team.id !== props.leaderTeam.id)
-                  .map((team, index) => (
+                  .map((team) => (
                     <motion.button
                       key={team.id}
                       className="vote-tile"
-                      style={teamStyle(index)}
+                      style={{ "--team-color": team.color ?? "#14b8a6" } as React.CSSProperties}
                       onClick={() => props.submitVote(team.id)}
-                      whileTap={{ scale: 0.96 }}
+                      whileTap={{ scale: 0.97 }}
                     >
-                      <span className="team-avatar">{getInitials(team.name)}</span>
+                      <TeamAvatar
+                        emoji={team.avatar_emoji ?? "⭐"}
+                        image={team.avatar_image ?? ""}
+                        name={team.name}
+                      />
                       <strong>{team.name}</strong>
-                      <small>Send to arena</small>
+                      <span>{team.animal ?? "Team"}</span>
                     </motion.button>
                   ))}
               </div>
 
               {props.leaderHasVoted && (
-                <motion.div
-                  className="submitted-banner"
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                >
+                <div className="submitted-banner">
                   <Sparkles size={18} />
-                  Vote submitted. You can still change it before lock.
-                </motion.div>
+                  Vote sent. You can still change it before the lock.
+                </div>
               )}
             </>
-          )}
-
-          {props.activeRound.status !== "voting" && (
+          ) : (
             <div className="challenge-preview">
-              <p className="section-kicker">Challenge Reveal</p>
-              <h3>{props.activeRound.challenge}</h3>
+              <p className="section-kicker">Stay ready</p>
+              <h3>The host is running this round live. Watch the screen for scoring.</h3>
             </div>
           )}
         </section>
       )}
     </motion.main>
+  );
+}
+
+function InfoChip(props: { icon: React.ReactNode; text: string }) {
+  return (
+    <div className="info-chip">
+      {props.icon}
+      <span>{props.text}</span>
+    </div>
+  );
+}
+
+function TeamAvatar(props: {
+  emoji: string;
+  image: string;
+  name: string;
+  className?: string;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  return (
+    <div className={`team-avatar ${props.className ?? ""}`}>
+      {props.image && !imageFailed ? (
+        <img
+          src={props.image}
+          alt={props.name}
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <span>{props.emoji}</span>
+      )}
+    </div>
+  );
+}
+
+function TeamCodeRow(props: { team: Team; index: number }) {
+  return (
+    <div
+      className="team-code-card"
+      style={{ "--team-color": props.team.color ?? TEAM_COLOR_OPTIONS[props.index] } as React.CSSProperties}
+    >
+      <TeamAvatar
+        emoji={props.team.avatar_emoji ?? "⭐"}
+        image={props.team.avatar_image ?? ""}
+        name={props.team.name}
+      />
+      <div>
+        <strong>{props.team.name}</strong>
+        <span>{props.team.leader_code}</span>
+      </div>
+    </div>
   );
 }
 
@@ -798,184 +1369,323 @@ function TimerRing(props: { secondsLeft: number; compact?: boolean }) {
   );
 }
 
-function Stat(props: { icon: React.ReactNode; value: string; label: string }) {
+function EmptyHostState() {
   return (
-    <div className="stat-card">
-      <div>{props.icon}</div>
-      <strong>{props.value}</strong>
-      <span>{props.label}</span>
+    <div className="empty-state">
+      <Sparkles size={42} />
+      <h2>Ready to launch the room</h2>
+      <p>Pick a round type or use random round when everybody is in.</p>
     </div>
   );
 }
 
-function FeatureCard(props: {
-  icon: React.ReactNode;
-  title: string;
-  text: string;
+function RoundReveal(props: {
+  round: RoundDefinition;
+  secondsLeft: number;
+  activeStatus: RoundStatus;
+  compact?: boolean;
 }) {
   return (
-    <motion.article
-      className="feature-card"
-      whileHover={{ y: -6, rotate: -0.4 }}
+    <motion.section
+      className={`round-reveal ${props.round.isFinal ? "round-reveal-final" : ""} ${props.compact ? "round-reveal-compact" : ""}`}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
     >
-      <div className="feature-icon">{props.icon}</div>
-      <h3>{props.title}</h3>
-      <p>{props.text}</p>
-    </motion.article>
+      <div className="round-reveal-top">
+        <div>
+          <p className="section-kicker">{roundTypeLabels[props.round.type]}</p>
+          <h2>{props.round.title}</h2>
+        </div>
+        {props.activeStatus === "voting" && !props.compact && (
+          <div className="round-mini-stat">
+            <TimerReset size={16} />
+            {props.secondsLeft}s left
+          </div>
+        )}
+      </div>
+
+      <h3>{props.round.prompt}</h3>
+      <p>{props.round.challenge}</p>
+
+      <div className="round-meta-grid">
+        <div>
+          <span>Instructions</span>
+          <strong>{props.round.instructions}</strong>
+        </div>
+        <div>
+          <span>Scoring guide</span>
+          <strong>{props.round.scoringGuide}</strong>
+        </div>
+        {props.round.twist && (
+          <div>
+            <span>Twist</span>
+            <strong>{props.round.twist}</strong>
+          </div>
+        )}
+      </div>
+    </motion.section>
   );
 }
 
-function VoteBar(props: {
+function AnimatedVoteBar(props: {
   team: Team;
   count: number;
   max: number;
   index: number;
 }) {
-  const width = `${Math.max(8, (props.count / props.max) * 100)}%`;
+  const width = `${Math.max(6, (props.count / props.max) * 100)}%`;
 
   return (
-    <div className="vote-bar-wrap" style={teamStyle(props.index)}>
+    <div
+      className="vote-bar-wrap"
+      style={{ "--team-color": props.team.color ?? TEAM_COLOR_OPTIONS[props.index] } as React.CSSProperties}
+    >
       <div className="vote-bar-meta">
-        <strong>{props.team.name}</strong>
-        <span>{props.count} votes</span>
+        <div className="vote-team-meta">
+          <TeamAvatar
+            emoji={props.team.avatar_emoji ?? "⭐"}
+            image={props.team.avatar_image ?? ""}
+            name={props.team.name}
+          />
+          <div>
+            <strong>{props.team.name}</strong>
+            <span>{props.team.animal ?? "Team"}</span>
+          </div>
+        </div>
+        <b>{props.count}</b>
       </div>
       <div className="vote-bar-track">
         <motion.div
           className="vote-bar-fill"
           initial={{ width: 0 }}
           animate={{ width }}
+          transition={{ type: "spring", stiffness: 120, damping: 24 }}
         />
       </div>
     </div>
   );
 }
 
-function AllTeamScoringPanel(props: {
-  teams: Team[];
-  sortedTeams: Team[];
+function ChallengeRevealCard(props: {
+  round: RoundRecord;
   targetTeam: Team | null;
-  challenge: string;
-  updateTeamScore: (teamId: string, delta: number) => void;
-  completeRound: () => void;
 }) {
   return (
     <motion.div
-      className="all-team-scoring"
-      initial={{ scale: 0.94, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
+      className="challenge-reveal"
+      initial={{ rotateX: -12, opacity: 0 }}
+      animate={{ rotateX: 0, opacity: 1 }}
     >
       <div className="arena-label">
-        <Zap size={18} />
-        All Teams Play
+        <Music2 size={16} />
+        {props.round.round_type === "voting" || props.round.round_type === "steal"
+          ? "Pressure team"
+          : "All teams live"}
       </div>
-
-      {props.targetTeam && (
-        <div className="pressure-banner">
-          <strong>{props.targetTeam.name}</strong>
-          <span>received the most votes and gets the pressure twist.</span>
-        </div>
-      )}
-
-      <h3>{props.challenge}</h3>
-
-      <div className="rubric-card">
-        <p className="section-kicker">Suggested Scoring</p>
-        <div className="rubric-grid">
-          <span>🥇 1st</span>
-          <strong>+10</strong>
-          <span>🥈 2nd</span>
-          <strong>+7</strong>
-          <span>🥉 3rd</span>
-          <strong>+5</strong>
-          <span>Participation</span>
-          <strong>+2</strong>
-        </div>
-      </div>
-
-      <div className="score-team-list">
-        {props.sortedTeams.map((team, index) => (
-          <div className="score-team-row" key={team.id} style={teamStyle(index)}>
-            <div className="team-avatar">{getInitials(team.name)}</div>
-
-            <div>
-              <strong>{team.name}</strong>
-              <span>{team.score} pts</span>
-            </div>
-
-            <div className="quick-score-actions">
-              <button onClick={() => props.updateTeamScore(team.id, 2)}>+2</button>
-              <button onClick={() => props.updateTeamScore(team.id, 5)}>+5</button>
-              <button onClick={() => props.updateTeamScore(team.id, 7)}>+7</button>
-              <button onClick={() => props.updateTeamScore(team.id, 10)}>+10</button>
-              <button
-                className="mini-danger"
-                onClick={() => props.updateTeamScore(team.id, -3)}
-              >
-                -3
-              </button>
-            </div>
+      {props.targetTeam ? (
+        <div className="pressure-team-banner">
+          <TeamAvatar
+            emoji={props.targetTeam.avatar_emoji ?? "⭐"}
+            image={props.targetTeam.avatar_image ?? ""}
+            name={props.targetTeam.name}
+            className="pressure-avatar"
+          />
+          <div>
+            <strong>{props.targetTeam.name}</strong>
+            <span>{props.targetTeam.animal}</span>
           </div>
+        </div>
+      ) : (
+        <p className="muted-on-dark">
+          This round is all-play, so every team is in the spotlight.
+        </p>
+      )}
+      <h3>{props.round.challenge}</h3>
+      <p className="muted-on-dark">{props.round.scoring_guide}</p>
+    </motion.div>
+  );
+}
+
+function ScoreCard(props: {
+  team: Team;
+  rank: number;
+  customValue: string;
+  onCustomChange: (value: string) => void;
+  onApplyCustom: () => void;
+  onPreset: (delta: number, reason: string) => void;
+}) {
+  return (
+    <div
+      className="score-card"
+      style={{ "--team-color": props.team.color ?? "#14b8a6" } as React.CSSProperties}
+    >
+      <div className="score-card-top">
+        <div className="score-team-wrap">
+          <TeamAvatar
+            emoji={props.team.avatar_emoji ?? "⭐"}
+            image={props.team.avatar_image ?? ""}
+            name={props.team.name}
+          />
+          <div>
+            <strong>{props.team.name}</strong>
+            <span>
+              #{props.rank} • {props.team.score} pts
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="score-preset-grid">
+        {SCORE_PRESETS.map((preset) => (
+          <button
+            key={`${props.team.id}-${preset.label}`}
+            className="score-chip"
+            onClick={() => props.onPreset(preset.delta, preset.reason)}
+          >
+            {preset.label}
+          </button>
         ))}
       </div>
 
-      <button className="primary-btn finish-round-btn" onClick={props.completeRound}>
-        <Trophy size={18} />
-        Finish Round
-      </button>
-    </motion.div>
+      <div className="custom-score-row">
+        <input
+          placeholder="Custom"
+          inputMode="numeric"
+          value={props.customValue}
+          onChange={(event) => props.onCustomChange(event.target.value)}
+        />
+        <button className="ghost-btn" onClick={props.onApplyCustom}>
+          Apply
+        </button>
+      </div>
+    </div>
   );
 }
 
-function LeaderboardScoreCard(props: {
-  team: Team;
-  rank: number;
-  index: number;
-  maxScore: number;
+function AnimatedLeaderboard(props: { teams: Team[]; maxScore: number }) {
+  return (
+    <div className="leaderboard">
+      {props.teams.map((team, index) => {
+        const width = `${Math.max(10, (Math.max(0, team.score) / props.maxScore) * 100)}%`;
+
+        return (
+          <motion.div
+            key={team.id}
+            layout
+            className={`leaderboard-row ${index === 0 ? "is-first" : ""}`}
+            style={{ "--team-color": team.color ?? "#14b8a6" } as React.CSSProperties}
+          >
+            <div className="leaderboard-row-top">
+              <span className="rank">{index + 1}</span>
+              <TeamAvatar
+                emoji={team.avatar_emoji ?? "⭐"}
+                image={team.avatar_image ?? ""}
+                name={team.name}
+              />
+              <div className="leaderboard-team-copy">
+                <strong>{team.name}</strong>
+                <span>{team.animal ?? "Team identity"}</span>
+              </div>
+              <div className="score-cluster">
+                <span className="score-number">{team.score}</span>
+                <span className="score-label">pts</span>
+              </div>
+            </div>
+            <div className="score-meter">
+              <motion.div className="score-meter-fill" animate={{ width }} />
+            </div>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GameHistoryPanel(props: {
+  rounds: RoundRecord[];
+  scoreEvents: ScoreEvent[];
+  teams: Team[];
 }) {
-  const scoreWidth = `${Math.max(
-    12,
-    (Math.max(0, props.team.score) / props.maxScore) * 100
-  )}%`;
-
   return (
-    <motion.div
-      className={`leaderboard-row ${props.rank === 1 ? "is-first" : ""}`}
-      style={teamStyle(props.index)}
-      layout
-    >
-      <div className="leaderboard-row-top">
-        <span className="rank">{props.rank}</span>
-        <div className="team-avatar">{getInitials(props.team.name)}</div>
-        <div className="leaderboard-team-copy">
-          <strong>{props.team.name}</strong>
-          <span>{props.rank === 1 ? "Leading the room" : "Still in the fight"}</span>
-        </div>
-        <div className="score-cluster">
-          <span className="score-number">{props.team.score}</span>
-          <span className="score-label">pts</span>
-        </div>
-      </div>
+    <div className="history-stack">
+      {props.rounds.length === 0 && (
+        <p className="muted-text">No rounds yet. Start one and the story builds here.</p>
+      )}
 
-      <div className="score-meter" aria-hidden="true">
-        <div className="score-meter-fill" style={{ width: scoreWidth }} />
-      </div>
-    </motion.div>
+      {props.rounds.map((round) => {
+        const events = props.scoreEvents.filter((event) => event.round_id === round.id);
+        const pressureTeam =
+          props.teams.find((team) => team.id === round.target_team_id)?.name ?? "All teams";
+
+        return (
+          <article className="history-card" key={round.id}>
+            <div className="history-card-top">
+              <strong>
+                Round {round.round_number ?? "?"}: {roundTypeLabels[round.round_type]}
+              </strong>
+              <span>{pressureTeam}</span>
+            </div>
+            <p>{round.challenge}</p>
+            <div className="history-events">
+              {events.slice(0, 4).map((event) => {
+                const teamName =
+                  props.teams.find((team) => team.id === event.team_id)?.name ?? "Team";
+                return (
+                  <span key={event.id}>
+                    {teamName} {event.delta > 0 ? `+${event.delta}` : event.delta}
+                  </span>
+                );
+              })}
+              {events.length === 0 && <span>No score events yet</span>}
+            </div>
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
-function LeaderboardRow(props: { team: Team; rank: number; index: number }) {
+function WinnerReveal(props: {
+  winner: Team;
+  teams: Team[];
+  maxScore: number;
+  reducedMotion: boolean;
+}) {
   return (
-    <motion.div
-      className={`leaderboard-row ${props.rank === 1 ? "is-first" : ""}`}
-      style={teamStyle(props.index)}
-      layout
+    <motion.section
+      className="winner-panel"
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
     >
-      <span className="rank">{props.rank === 1 ? "👑" : props.rank}</span>
-      <div className="team-avatar">{getInitials(props.team.name)}</div>
-      <strong>{props.team.name}</strong>
-      <span className="score">{props.team.score}</span>
-    </motion.div>
+      <ConfettiBurst reducedMotion={props.reducedMotion} />
+      <p className="section-kicker">Winner reveal</p>
+      <div className="winner-hero">
+        <TeamAvatar
+          emoji={props.winner.avatar_emoji ?? "⭐"}
+          image={props.winner.avatar_image ?? ""}
+          name={props.winner.name}
+          className="winner-avatar"
+        />
+        <div>
+          <h2>{props.winner.name}</h2>
+          <p>
+            {props.winner.animal} take the room with {props.winner.score} points.
+          </p>
+        </div>
+      </div>
+      <AnimatedLeaderboard teams={props.teams} maxScore={props.maxScore} />
+    </motion.section>
   );
 }
 
-void LeaderboardRow;
+function ConfettiBurst(props: { reducedMotion: boolean }) {
+  if (props.reducedMotion) return null;
+
+  return (
+    <div className="confetti-burst" aria-hidden="true">
+      {Array.from({ length: 18 }, (_, index) => (
+        <span key={index} style={{ "--delay": `${index * 80}ms` } as React.CSSProperties} />
+      ))}
+    </div>
+  );
+}
