@@ -237,7 +237,7 @@ const multipleChoiceQuestions = [
 // BIBLE SPEED ROUND PASSAGES
 // ---------------------------------------------------------------------------
 
-const bibleSpeedChallenges = [
+export const legacyBibleSpeedChallenges = [
   "Race: Find and read Jeremiah 29:11 first.",
   "Race: Find and read Romans 8:28 first.",
   "Race: Find and read Philippians 4:13 first.",
@@ -371,18 +371,22 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
       };
     }
 
-    case "bible_speed":
+    case "bible_speed": {
+      const question = pickRandom(multipleChoiceQuestions);
       return {
         type,
         title: "Bible Speed Face-Off",
         prompt: pickRandom(bibleSpeedPrompts),
-        challenge: pickRandom(bibleSpeedChallenges),
+        challenge: question.question,
         instructions:
-          "Host gives the reference, starts the timer, and calls one matchup at a time or two duos side by side.",
+          "Show the Bible question on the game screen. Leaders answer from their phones; fastest correct answer wins.",
         scoringGuide:
-          "Use winner, runner-up, and effort scoring based on each matchup result.",
+          "Use answer order for scoring. Fastest correct gets the main points, then award runner-up or effort points.",
         requiresVoting: false,
+        answerOptions: shuffle(question.options),
+        correctAnswer: question.correctAnswer,
       };
+    }
 
     case "dance_battle":
       return {

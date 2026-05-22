@@ -2484,6 +2484,7 @@ function FinalRevealStage(props: {
           {revealOrder.map((team, revealIndex) => {
             const originalIndex = props.teams.findIndex((entry) => entry.id === team.id);
             const isWinner = team.id === props.winner.id;
+            const teamVideo = isWinner ? getWinnerVideo(team) : getLoserVideo(team);
 
             return (
               <motion.div
@@ -2503,6 +2504,18 @@ function FinalRevealStage(props: {
                   <strong>{team.name}</strong>
                 </div>
                 <b>{team.score} pts</b>
+                {teamVideo ? (
+                  <video
+                    className="final-team-video"
+                    src={teamVideo}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                  />
+                ) : (
+                  <div className="final-team-video-placeholder">No video</div>
+                )}
               </motion.div>
             );
           })}

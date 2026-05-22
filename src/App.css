@@ -1160,7 +1160,7 @@ textarea {
 
 .final-reveal-card {
   display: grid;
-  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto minmax(120px, 0.24fr);
   gap: 14px;
   align-items: center;
   border-radius: 22px;
@@ -1205,6 +1205,42 @@ textarea {
   color: #0b1023;
   font-size: clamp(1.25rem, 3vw, 2.6rem);
   line-height: 1;
+}
+
+.final-team-video,
+.final-team-video-placeholder {
+  width: 100%;
+  height: clamp(72px, 10vw, 132px);
+  border-radius: 16px;
+}
+
+.final-team-video {
+  background: #0b1023;
+  object-fit: cover;
+}
+
+.final-team-video-placeholder {
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  background: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 720px) {
+  .final-reveal-card {
+    grid-template-columns: 1fr auto;
+  }
+
+  .final-reveal-card > span,
+  .final-reveal-team,
+  .final-team-video,
+  .final-team-video-placeholder {
+    grid-column: 1 / -1;
+  }
 }
 
 .final-winner-feature {
