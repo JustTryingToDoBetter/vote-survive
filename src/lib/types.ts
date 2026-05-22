@@ -1,4 +1,4 @@
-export type AppMode = "home" | "host" | "leader" | "summary";
+export type AppMode = "home" | "host" | "leader" | "audience" | "summary";
 
 export type RoundType =
   | "voting"
@@ -22,6 +22,7 @@ export type Room = {
   code: string;
   host_pin: string;
   status: string;
+  created_at?: string;
 };
 
 export type Team = {
@@ -78,6 +79,7 @@ export type RoundRecord = {
   status: RoundStatus;
   target_team_id: string | null;
   is_final?: boolean | null;
+  timer_seconds?: number | null;
   created_at: string;
 };
 

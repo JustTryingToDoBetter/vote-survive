@@ -11,13 +11,16 @@ import tigerLoserVideo from "./assets/losers/Tiger_lose.mp4";
 import {
   Check,
   Crown,
+  Eye,
   Gamepad2,
   Music2,
   Play,
   RotateCcw,
+  Settings,
   Sparkles,
   TimerReset,
   Trophy,
+  Users,
   Volume2,
   VolumeX,
   Vote,
@@ -42,7 +45,8 @@ import type {
 } from "./lib/types";
 import "./App.css";
 
-const ROUND_SECONDS = 45;
+const DEFAULT_ROUND_SECONDS = 45;
+const HOST_SESSION_KEY = "vote-survive-host-session";
 
 const SCORE_PRESETS = [
   { label: "+2 Participation", delta: 2, reason: "Participation" },
@@ -117,8 +121,13 @@ function toRoundRecord(row: Record<string, unknown>): RoundRecord {
     is_final:
       (row.is_final as boolean | null | undefined) ??
       roundType === "final_double",
+    timer_seconds: (row.timer_seconds as number | null | undefined) ?? null,
     created_at: String(row.created_at),
   };
+}
+
+function getRoundTimerSeconds(round: RoundRecord | null) {
+  return round?.timer_seconds ?? DEFAULT_ROUND_SECONDS;
 }
 
 function normalizeTeam(team: Team, fallbackIndex: number): Team {
@@ -167,9 +176,11 @@ export default function App() {
   const initialPath =
     typeof window !== "undefined" && window.location.pathname.startsWith("/join")
       ? "leader"
+      : typeof window !== "undefined" && window.location.pathname.startsWith("/audience")
+      ? "audience"
       : "home";
 
-  const [mode, setMode] = useState<AppMode>(initialPath === "leader" ? "home" : "home");
+  const [mode, setMode] = useState<AppMode>(initialPath === "audience" ? "audience" : "home");
   const [room, setRoom] = useState<Room | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [activeRound, setActiveRound] = useState<RoundRecord | null>(null);
@@ -180,12 +191,15 @@ export default function App() {
   const [roomCodeInput, setRoomCodeInput] = useState(initialRoomCode);
   const [teamCodeInput, setTeamCodeInput] = useState("");
   const [selectedRoundType, setSelectedRoundType] = useState<RoundType>("voting");
+  const [timerDuration, setTimerDuration] = useState(DEFAULT_ROUND_SECONDS);
+  const [customTimerInput, setCustomTimerInput] = useState("");
   const [customScoreInputs, setCustomScoreInputs] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
   const [showWinner, setShowWinner] = useState(false);
   const lastCountdownSoundRef = useRef<number | null>(null);
+  const autoLockingRoundRef = useRef<string | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -208,7 +222,7 @@ export default function App() {
     const created = new Date(activeRound.created_at).getTime();
     const elapsed = Math.floor((now - created) / 1000);
 
-    return Math.max(0, ROUND_SECONDS - elapsed);
+    return Math.max(0, getRoundTimerSeconds(activeRound) - elapsed);
   }, [activeRound, now]);
 
   const voteCounts = useMemo(() => {
@@ -330,6 +344,56 @@ export default function App() {
     }
   }, []);
 
+  const loadRoomByCode = useCallback(async (code: string, nextMode: AppMode) => {
+    const normalizedCode = code.trim().toUpperCase();
+    if (!normalizedCode) return;
+
+    setIsLoading(true);
+    setLoadError(null);
+
+    try {
+      const { data: foundRoom, error } = await supabase
+        .from("rooms")
+        .select("*")
+        .eq("code", normalizedCode)
+        .single();
+
+      if (error || !foundRoom) throw new Error("Room not found.");
+
+      setRoom(foundRoom as Room);
+      setRoomCodeInput((foundRoom as Room).code);
+      setMode(nextMode);
+      await refreshRoomData((foundRoom as Room).id);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load room.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [refreshRoomData]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (initialPath === "audience") {
+      window.setTimeout(() => void loadRoomByCode(initialRoomCode, "audience"), 0);
+      return;
+    }
+
+    if (initialPath === "leader") return;
+
+    const stored = window.localStorage.getItem(HOST_SESSION_KEY);
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored) as { roomCode?: string };
+      if (parsed.roomCode) {
+        window.setTimeout(() => void loadRoomByCode(parsed.roomCode ?? "", "host"), 0);
+      }
+    } catch {
+      window.localStorage.removeItem(HOST_SESSION_KEY);
+    }
+  }, [initialPath, initialRoomCode, loadRoomByCode]);
+
   useEffect(() => {
     if (!room) return;
 
@@ -404,6 +468,12 @@ export default function App() {
       setRoom(createdRoom as Room);
       setTeams((createdTeams ?? []) as Team[]);
       setMode("host");
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(
+          HOST_SESSION_KEY,
+          JSON.stringify({ roomCode: (createdRoom as Room).code, hostPin })
+        );
+      }
       sound.play("roundStart");
     } catch (error) {
       setLoadError(
@@ -461,8 +531,10 @@ export default function App() {
       const definition = buildRoundDefinition(roundType);
       const nextRoundNumber = (rounds[0]?.round_number ?? 0) + 1;
       const status: RoundStatus = definition.requiresVoting ? "voting" : "scoring";
+      const selectedTimer =
+        Number(customTimerInput) > 0 ? Number(customTimerInput) : timerDuration;
 
-      const { error } = await supabase.from("rounds").insert({
+      const roundPayload = {
         room_id: room.id,
         round_number: nextRoundNumber,
         round_type: definition.type,
@@ -475,9 +547,19 @@ export default function App() {
         twist: definition.twist ?? null,
         status,
         is_final: definition.isFinal ?? false,
-      });
+        timer_seconds: definition.requiresVoting ? selectedTimer : null,
+      };
 
-      if (error) throw error;
+      const { error } = await supabase.from("rounds").insert(roundPayload);
+
+      if (error && error.message.toLowerCase().includes("timer_seconds")) {
+        const legacyPayload: Partial<typeof roundPayload> = { ...roundPayload };
+        delete legacyPayload.timer_seconds;
+        const { error: retryError } = await supabase.from("rounds").insert(legacyPayload);
+        if (retryError) throw retryError;
+      } else if (error) {
+        throw error;
+      }
 
       await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
 
@@ -511,7 +593,7 @@ export default function App() {
     sound.play("voteSubmit");
   }
 
-  async function lockVotes() {
+  const lockVotes = useCallback(async () => {
     if (!activeRound) return;
 
     const winner = sortedVoteCounts[0];
@@ -530,7 +612,15 @@ export default function App() {
     }
 
     sound.play("reveal");
-  }
+  }, [activeRound, sortedVoteCounts, sound]);
+
+  useEffect(() => {
+    if (!activeRound || activeRound.status !== "voting" || secondsLeft > 0) return;
+    if (autoLockingRoundRef.current === activeRound.id) return;
+
+    autoLockingRoundRef.current = activeRound.id;
+    void lockVotes();
+  }, [activeRound, secondsLeft, lockVotes]);
 
   async function applyScore(teamId: string, delta: number, reason: string) {
     if (!room) return;
@@ -624,6 +714,46 @@ export default function App() {
     sound.play("winner");
   }
 
+  async function resetGame() {
+    if (!room) return;
+
+    setLoadError(null);
+
+    try {
+      const roundIds = rounds.map((round) => round.id);
+
+      if (roundIds.length > 0) {
+        await supabase.from("votes").delete().in("round_id", roundIds);
+      }
+
+      await supabase.from("score_events").delete().eq("room_id", room.id);
+      await supabase.from("rounds").delete().eq("room_id", room.id);
+      await Promise.all(
+        teams.map((team) => supabase.from("teams").update({ score: 0 }).eq("id", team.id))
+      );
+      await supabase.from("rooms").update({ status: "lobby" }).eq("id", room.id);
+      setShowWinner(false);
+      setVotes([]);
+      setRounds([]);
+      setActiveRound(null);
+      setScoreEvents([]);
+      sound.play("reveal");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to reset game.");
+    }
+  }
+
+  async function updateTeamContent(teamId: string, patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>) {
+    const { error } = await supabase.from("teams").update(patch).eq("id", teamId);
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    if (room) await refreshRoomData(room.id);
+  }
+
   const shouldShowJoinFocus = initialPath === "leader";
 
   return (
@@ -658,6 +788,10 @@ export default function App() {
           loadError={loadError}
           selectedRoundType={selectedRoundType}
           setSelectedRoundType={setSelectedRoundType}
+          timerDuration={timerDuration}
+          setTimerDuration={setTimerDuration}
+          customTimerInput={customTimerInput}
+          setCustomTimerInput={setCustomTimerInput}
           soundEnabled={sound.enabled}
           toggleSound={() => sound.setEnabled(!sound.enabled)}
           startRound={startRound}
@@ -669,6 +803,8 @@ export default function App() {
           customScoreInputs={customScoreInputs}
           setCustomScoreInputs={setCustomScoreInputs}
           revealWinner={revealWinner}
+          resetGame={resetGame}
+          updateTeamContent={updateTeamContent}
           showWinner={showWinner}
           winnerTeam={winnerTeam}
           reducedMotion={Boolean(reducedMotion)}
@@ -686,6 +822,23 @@ export default function App() {
           soundEnabled={sound.enabled}
           toggleSound={() => sound.setEnabled(!sound.enabled)}
           submitVote={submitVote}
+        />
+      )}
+
+      {mode === "audience" && room && (
+        <AudienceScreen
+          room={room}
+          teams={teams}
+          sortedTeams={sortedTeams}
+          activeRound={activeRound}
+          voteCounts={voteCounts}
+          targetTeam={targetTeam}
+          rivalTeam={rivalTeam}
+          secondsLeft={secondsLeft}
+          totalVotes={totalVotes}
+          showWinner={showWinner || room.status === "winner" || activeRound?.status === "winner"}
+          winnerTeam={winnerTeam}
+          reducedMotion={Boolean(reducedMotion)}
         />
       )}
     </AnimatePresence>
@@ -740,6 +893,18 @@ function HomeScreen(props: {
           <h2>Join from your phone</h2>
           <p>Scan the QR from the host or enter your room and team code.</p>
 
+          <div className="join-team-preview-grid">
+            {DEFAULT_TEAMS.map((team) => (
+              <div className="join-team-preview" key={team.name} style={{ "--team-color": team.color } as React.CSSProperties}>
+                <TeamAvatar emoji={team.avatarEmoji} image={team.avatarImage} name={team.name} />
+                <div>
+                  <strong>{team.name}</strong>
+                  <span>{team.animal}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
           <div className="join-form">
             <input
               placeholder="Room code"
@@ -782,6 +947,10 @@ function HostScreen(props: {
   loadError: string | null;
   selectedRoundType: RoundType;
   setSelectedRoundType: (value: RoundType) => void;
+  timerDuration: number;
+  setTimerDuration: (value: number) => void;
+  customTimerInput: string;
+  setCustomTimerInput: (value: string) => void;
   soundEnabled: boolean;
   toggleSound: () => void;
   startRound: (type?: RoundType) => void;
@@ -793,12 +962,28 @@ function HostScreen(props: {
   customScoreInputs: Record<string, string>;
   setCustomScoreInputs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   revealWinner: () => void;
+  resetGame: () => void;
+  updateTeamContent: (teamId: string, patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>) => void;
   showWinner: boolean;
   winnerTeam: Team | null;
   reducedMotion: boolean;
 }) {
   const maxVotes = Math.max(1, ...props.voteCounts.map((entry) => entry.count));
   const maxScore = Math.max(1, ...props.sortedTeams.map((team) => team.score));
+  const joinedTeams = props.teams.length;
+  const votingTeams = Math.max(0, props.teams.length);
+  const voteProgress = votingTeams > 0 ? Math.round((props.totalVotes / votingTeams) * 100) : 0;
+  const audienceUrl =
+    typeof window === "undefined"
+      ? ""
+      : `${window.location.origin}/audience?room=${props.room.code}`;
+  const roundStatusLabel = props.activeRound
+    ? `${roundTypeLabels[props.activeRound.round_type]} - ${props.activeRound.status}`
+    : "Lobby - waiting to start";
+  const canStartRound =
+    !props.activeRound ||
+    props.activeRound.status === "complete" ||
+    props.activeRound.status === "winner";
   const activeDefinition = props.activeRound
     ? {
         type: props.activeRound.round_type,
@@ -836,10 +1021,14 @@ function HostScreen(props: {
             {props.soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
             {props.soundEnabled ? "Sound on" : "Sound off"}
           </button>
-          <button className="primary-btn" onClick={() => props.startRound()}>
+          <button className="primary-btn" onClick={() => props.startRound()} disabled={!canStartRound}>
             <Sparkles size={18} />
             Random round
           </button>
+          <a className="ghost-btn" href={audienceUrl} target="_blank" rel="noreferrer">
+            <Eye size={18} />
+            Audience
+          </a>
         </div>
       </header>
 
@@ -847,6 +1036,13 @@ function HostScreen(props: {
 
       <section className="host-grid">
         <div className="host-main-column">
+          <div className="dashboard-grid">
+            <HostStatCard label="Round status" value={roundStatusLabel} icon={<Settings size={18} />} />
+            <HostStatCard label="Joined teams" value={`${joinedTeams} ready`} icon={<Users size={18} />} />
+            <HostStatCard label="Voting progress" value={`${voteProgress}%`} icon={<Vote size={18} />} />
+            <HostStatCard label="History" value={`${props.rounds.length} rounds`} icon={<Trophy size={18} />} />
+          </div>
+
           <div className="game-card">
             <div className="round-toolbar">
               <div>
@@ -867,12 +1063,27 @@ function HostScreen(props: {
                     </option>
                   ))}
                 </select>
-                <button className="primary-btn" onClick={() => props.startRound(props.selectedRoundType)}>
+                <button
+                  className="primary-btn"
+                  onClick={() => props.startRound(props.selectedRoundType)}
+                  disabled={!canStartRound}
+                >
                   <Play size={18} />
                   Start chosen round
                 </button>
               </div>
             </div>
+            {!canStartRound && (
+              <p className="muted-text">
+                Finish or complete the current round before starting another one.
+              </p>
+            )}
+            <TimerControls
+              timerDuration={props.timerDuration}
+              setTimerDuration={props.setTimerDuration}
+              customTimerInput={props.customTimerInput}
+              setCustomTimerInput={props.setCustomTimerInput}
+            />
           </div>
 
           <div className={`game-card ${props.activeRound?.round_type === "final_double" ? "final-round-card" : ""}`}>
@@ -893,7 +1104,10 @@ function HostScreen(props: {
                     <Vote size={16} />
                     {props.totalVotes} votes in
                   </div>
-                  <TimerRing secondsLeft={props.secondsLeft} />
+                  <TimerRing
+                    secondsLeft={props.secondsLeft}
+                    duration={getRoundTimerSeconds(props.activeRound)}
+                  />
                 </div>
 
                 <div className="vote-bars">
@@ -1018,12 +1232,14 @@ function HostScreen(props: {
           <div className="game-card">
             <p className="section-kicker">Live leaderboard</p>
             <AnimatedLeaderboard teams={props.sortedTeams} maxScore={maxScore} />
-            {props.activeRound?.round_type === "final_double" && (
-              <button className="ghost-btn wide-btn" onClick={props.revealWinner}>
-                <Crown size={18} />
-                Reveal winner now
-              </button>
-            )}
+            <button className="ghost-btn wide-btn" onClick={props.revealWinner}>
+              <Crown size={18} />
+              Final reveal
+            </button>
+            <button className="danger-btn wide-btn" onClick={props.resetGame}>
+              <RotateCcw size={18} />
+              Reset game
+            </button>
           </div>
 
           <div className="game-card">
@@ -1034,9 +1250,225 @@ function HostScreen(props: {
               teams={props.teams}
             />
           </div>
+
+          <AdminContentEditor teams={props.teams} updateTeamContent={props.updateTeamContent} />
         </div>
       </section>
     </motion.main>
+  );
+}
+
+function HostStatCard(props: { label: string; value: string; icon: React.ReactNode }) {
+  return (
+    <div className="host-stat-card">
+      <div className="host-stat-icon">{props.icon}</div>
+      <span>{props.label}</span>
+      <strong>{props.value}</strong>
+    </div>
+  );
+}
+
+function AudienceScreen(props: {
+  room: Room;
+  teams: Team[];
+  sortedTeams: Team[];
+  activeRound: RoundRecord | null;
+  voteCounts: { team: Team; count: number }[];
+  targetTeam: Team | null;
+  rivalTeam: Team | null;
+  secondsLeft: number;
+  totalVotes: number;
+  showWinner: boolean;
+  winnerTeam: Team | null;
+  reducedMotion: boolean;
+}) {
+  const maxVotes = Math.max(1, ...props.voteCounts.map((entry) => entry.count));
+  const maxScore = Math.max(1, ...props.sortedTeams.map((team) => team.score));
+
+  return (
+    <motion.main
+      className="audience-shell"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <header className="audience-header">
+        <div>
+          <p className="section-kicker">Audience screen</p>
+          <h1>{props.room.code}</h1>
+        </div>
+        {props.activeRound?.status === "voting" && (
+          <TimerRing
+            secondsLeft={props.secondsLeft}
+            duration={getRoundTimerSeconds(props.activeRound)}
+          />
+        )}
+      </header>
+
+      {props.showWinner && props.winnerTeam ? (
+        <WinnerReveal
+          winner={props.winnerTeam}
+          teams={props.sortedTeams}
+          maxScore={maxScore}
+          reducedMotion={props.reducedMotion}
+        />
+      ) : (
+        <section className="audience-grid">
+          <div className="audience-main">
+            <p className="section-kicker">Big leaderboard</p>
+            <AnimatedLeaderboard teams={props.sortedTeams} maxScore={maxScore} />
+          </div>
+
+          <div className="audience-side">
+            <div className="game-card">
+              <p className="section-kicker">Current matchup</p>
+              {props.activeRound ? (
+                <ChallengeRevealCard
+                  round={props.activeRound}
+                  targetTeam={props.targetTeam}
+                  rivalTeam={props.rivalTeam}
+                />
+              ) : (
+                <div className="empty-state">
+                  <Sparkles size={42} />
+                  <h2>Waiting for the host</h2>
+                </div>
+              )}
+            </div>
+
+            <div className="game-card">
+              <div className="live-row">
+                <div>
+                  <p className="section-kicker">Live votes</p>
+                  <h2>{props.totalVotes} in</h2>
+                </div>
+              </div>
+              <div className="vote-bars">
+                {props.voteCounts.map((entry, index) => (
+                  <AnimatedVoteBar
+                    key={entry.team.id}
+                    team={entry.team}
+                    count={entry.count}
+                    max={maxVotes}
+                    index={index}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+    </motion.main>
+  );
+}
+
+function TimerControls(props: {
+  timerDuration: number;
+  setTimerDuration: (value: number) => void;
+  customTimerInput: string;
+  setCustomTimerInput: (value: string) => void;
+}) {
+  const options = [30, 45, 60];
+
+  return (
+    <div className="timer-control-panel">
+      <div>
+        <p className="section-kicker">Round timer</p>
+        <span className="muted-text">Voting locks automatically when the countdown ends.</span>
+      </div>
+      <div className="timer-option-row">
+        {options.map((seconds) => (
+          <button
+            key={seconds}
+            className={`ghost-btn ${props.timerDuration === seconds && !props.customTimerInput ? "active-pill" : ""}`}
+            onClick={() => {
+              props.setTimerDuration(seconds);
+              props.setCustomTimerInput("");
+            }}
+          >
+            {seconds}s
+          </button>
+        ))}
+        <input
+          className="timer-custom-input"
+          placeholder="Custom seconds"
+          inputMode="numeric"
+          value={props.customTimerInput}
+          onChange={(event) => {
+            const next = event.target.value.replace(/\D/g, "").slice(0, 3);
+            props.setCustomTimerInput(next);
+            if (Number(next) > 0) props.setTimerDuration(Number(next));
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AdminContentEditor(props: {
+  teams: Team[];
+  updateTeamContent: (teamId: string, patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>) => void;
+}) {
+  return (
+    <div className="game-card admin-editor">
+      <div>
+        <p className="section-kicker">Content editor</p>
+        <h3>Teams and media keys</h3>
+        <p className="muted-text">
+          Edit the names and animals used for join cards, scoreboards, and winner or loser media matching.
+        </p>
+      </div>
+
+      <div className="admin-editor-stack">
+        {props.teams.map((team) => (
+          <AdminTeamEditorRow
+            key={`${team.id}-${team.name}-${team.animal ?? ""}`}
+            team={team}
+            updateTeamContent={props.updateTeamContent}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminTeamEditorRow(props: {
+  team: Team;
+  updateTeamContent: (teamId: string, patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>) => void;
+}) {
+  const [name, setName] = useState(props.team.name);
+  const [animal, setAnimal] = useState(props.team.animal ?? "");
+
+  return (
+    <div className="admin-editor-row">
+      <TeamAvatar
+        emoji={props.team.avatar_emoji ?? "★"}
+        image={props.team.avatar_image ?? ""}
+        name={props.team.name}
+      />
+      <input
+        aria-label={`${props.team.name} name`}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        onBlur={() => {
+          const trimmed = name.trim();
+          if (trimmed && trimmed !== props.team.name) {
+            props.updateTeamContent(props.team.id, { name: trimmed });
+          }
+        }}
+      />
+      <input
+        aria-label={`${props.team.name} animal`}
+        value={animal}
+        onChange={(event) => setAnimal(event.target.value)}
+        onBlur={() => {
+          const trimmed = animal.trim();
+          if (trimmed !== (props.team.animal ?? "")) {
+            props.updateTeamContent(props.team.id, { animal: trimmed });
+          }
+        }}
+      />
+    </div>
   );
 }
 
@@ -1070,22 +1502,34 @@ function LeaderScreen(props: {
         <div>
           <p className="section-kicker">Room {props.room.code}</p>
           <h1>{props.leaderTeam.name}</h1>
-          <p className="header-helper">You are voting for your team tonight.</p>
+          <p className="header-helper">You joined as {props.leaderTeam.name}.</p>
         </div>
 
         <div className="header-actions">
           <button className="ghost-btn" onClick={props.toggleSound}>
             {props.soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
           </button>
-          {voteOpen && <TimerRing secondsLeft={props.secondsLeft} compact />}
+          {voteOpen && (
+            <TimerRing
+              secondsLeft={props.secondsLeft}
+              duration={getRoundTimerSeconds(props.activeRound)}
+              compact
+            />
+          )}
         </div>
       </header>
 
       {!props.activeRound && (
         <div className="game-card waiting-card">
-          <Gamepad2 size={48} />
-          <h2>Waiting for the host</h2>
-          <p>The next round will appear here on your phone.</p>
+          <TeamAvatar
+            emoji={props.leaderTeam.avatar_emoji ?? "★"}
+            image={props.leaderTeam.avatar_image ?? ""}
+            name={props.leaderTeam.name}
+            className="waiting-avatar"
+          />
+          <Gamepad2 size={40} />
+          <h2>Waiting room</h2>
+          <p>You joined as {props.leaderTeam.name}. Host will start soon.</p>
         </div>
       )}
 
@@ -1206,8 +1650,9 @@ function TeamCodeRow(props: { team: Team; index: number }) {
   );
 }
 
-function TimerRing(props: { secondsLeft: number; compact?: boolean }) {
-  const percentage = (props.secondsLeft / ROUND_SECONDS) * 100;
+function TimerRing(props: { secondsLeft: number; compact?: boolean; duration?: number }) {
+  const duration = props.duration ?? DEFAULT_ROUND_SECONDS;
+  const percentage = (props.secondsLeft / duration) * 100;
 
   return (
     <div
@@ -1527,6 +1972,14 @@ function GameHistoryPanel(props: {
   );
 }
 
+function placeLabel(index: number, total: number) {
+  if (index === total - 1) return "Last place";
+  if (index === 0) return "1st place";
+  if (index === 1) return "2nd place";
+  if (index === 2) return "3rd place";
+  return `${index + 1}th place`;
+}
+
 function WinnerReveal(props: {
   winner: Team;
   teams: Team[];
@@ -1534,6 +1987,8 @@ function WinnerReveal(props: {
   reducedMotion: boolean;
 }) {
   const winnerVideo = getWinnerVideo(props.winner);
+  const lastTeam = props.teams[props.teams.length - 1] ?? null;
+  const loserVideo = lastTeam ? getLoserVideo(lastTeam) : null;
   const losingTeams = props.teams.filter((team) => team.id !== props.winner.id);
 
   return (
@@ -1563,6 +2018,31 @@ function WinnerReveal(props: {
           <video
             className="winner-video"
             src={winnerVideo}
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        </div>
+      )}
+      <div className="final-results-grid">
+        {props.teams.map((team, index) => (
+          <div
+            className={`final-place-card ${index === 0 ? "is-winner" : ""} ${index === props.teams.length - 1 ? "is-last" : ""}`}
+            key={team.id}
+          >
+            <span>{placeLabel(index, props.teams.length)}</span>
+            <strong>{team.name}</strong>
+            <b>{team.score} pts</b>
+          </div>
+        ))}
+      </div>
+      {lastTeam && loserVideo && (
+        <div className="winner-video-wrap loser-feature-video">
+          <p className="section-kicker">Loser video</p>
+          <video
+            className="winner-video"
+            src={loserVideo}
             autoPlay
             loop
             muted

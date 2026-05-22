@@ -1,13 +1,13 @@
-const soundFiles = {
-  roundStart: "/sounds/round-start.mp3",
-  voteSubmit: "/sounds/vote-submit.mp3",
-  countdown: "/sounds/countdown.mp3",
-  reveal: "/sounds/reveal.mp3",
-  score: "/sounds/score.mp3",
-  winner: "/sounds/winner.mp3",
+const toneProfiles = {
+  roundStart: [440, 660],
+  voteSubmit: [520, 780],
+  countdown: [700],
+  reveal: [330, 550, 880],
+  score: [620, 820],
+  winner: [523, 659, 784, 1046],
 } as const;
 
-export type SoundName = keyof typeof soundFiles;
+export type SoundName = keyof typeof toneProfiles;
 
 export class SoundManager {
   private enabled = true;
@@ -23,12 +23,29 @@ export class SoundManager {
   play(name: SoundName) {
     if (!this.enabled || typeof window === "undefined") return;
 
-    const file = soundFiles[name];
-    const audio = new Audio(file);
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
 
-    void audio.play().catch(() => {
-      // Missing files or autoplay restrictions should fail quietly.
+    const context = new AudioContextClass();
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.38);
+    gain.connect(context.destination);
+
+    toneProfiles[name].forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const start = context.currentTime + index * 0.08;
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, start);
+      oscillator.connect(gain);
+      oscillator.start(start);
+      oscillator.stop(start + 0.18);
     });
+
+    window.setTimeout(() => void context.close(), 700);
   }
 }
 

@@ -12,7 +12,8 @@ alter table public.rounds
   add column if not exists scoring_guide text,
   add column if not exists instructions text,
   add column if not exists twist text,
-  add column if not exists is_final boolean default false;
+  add column if not exists is_final boolean default false,
+  add column if not exists timer_seconds integer;
 
 do $$
 begin
