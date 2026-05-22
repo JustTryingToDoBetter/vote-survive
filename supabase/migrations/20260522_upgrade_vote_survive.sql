@@ -14,7 +14,9 @@ alter table public.rounds
   add column if not exists instructions text,
   add column if not exists twist text,
   add column if not exists is_final boolean default false,
-  add column if not exists timer_seconds integer;
+  add column if not exists timer_seconds integer,
+  add column if not exists answer_options jsonb,
+  add column if not exists correct_answer text;
 
 do $$
 begin
@@ -53,3 +55,16 @@ create index if not exists score_events_room_created_idx
 
 create index if not exists score_events_team_created_idx
   on public.score_events(team_id, created_at desc);
+
+create table if not exists public.answer_submissions (
+  id uuid primary key default gen_random_uuid(),
+  round_id uuid not null references public.rounds(id) on delete cascade,
+  team_id uuid not null references public.teams(id) on delete cascade,
+  answer text not null,
+  is_correct boolean not null default false,
+  submitted_at timestamptz not null default now(),
+  unique(round_id, team_id)
+);
+
+create index if not exists answer_submissions_round_submitted_idx
+  on public.answer_submissions(round_id, submitted_at asc);

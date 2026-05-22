@@ -123,7 +123,7 @@ const allPlayChallenges = [
 // QUIZ BURST QUESTIONS
 // ---------------------------------------------------------------------------
 
-const bibleQuestions = [
+export const legacyBibleQuestions = [
   // Easy — Old Testament
   "Who built the ark?",
   "Who brought down Goliath?",
@@ -190,6 +190,49 @@ const bibleQuestions = [
   "Who wrote Lamentations and what was happening at the time?",
 ];
 
+const multipleChoiceQuestions = [
+  {
+    question: "Who built the ark?",
+    correctAnswer: "Noah",
+    options: ["Noah", "Moses", "David", "Abraham"],
+  },
+  {
+    question: "Where was Jesus born?",
+    correctAnswer: "Bethlehem",
+    options: ["Bethlehem", "Nazareth", "Jerusalem", "Capernaum"],
+  },
+  {
+    question: "Who brought down Goliath?",
+    correctAnswer: "David",
+    options: ["David", "Saul", "Samson", "Joshua"],
+  },
+  {
+    question: "Who was swallowed by a great fish?",
+    correctAnswer: "Jonah",
+    options: ["Jonah", "Elijah", "Daniel", "Peter"],
+  },
+  {
+    question: "How many disciples did Jesus choose?",
+    correctAnswer: "12",
+    options: ["7", "10", "12", "40"],
+  },
+  {
+    question: "Who denied Jesus three times?",
+    correctAnswer: "Peter",
+    options: ["Peter", "John", "Thomas", "Judas"],
+  },
+  {
+    question: "Which king asked God for wisdom?",
+    correctAnswer: "Solomon",
+    options: ["Solomon", "David", "Saul", "Hezekiah"],
+  },
+  {
+    question: "What sea did Jesus walk on?",
+    correctAnswer: "Sea of Galilee",
+    options: ["Sea of Galilee", "Dead Sea", "Red Sea", "Mediterranean Sea"],
+  },
+];
+
 // ---------------------------------------------------------------------------
 // BIBLE SPEED ROUND PASSAGES
 // ---------------------------------------------------------------------------
@@ -246,6 +289,10 @@ const stealChallenges = [
 
 function pickRandom<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+function shuffle<T>(items: T[]): T[] {
+  return [...items].sort(() => Math.random() - 0.5);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,19 +353,23 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
         requiresVoting: false,
       };
 
-    case "quiz_burst":
+    case "quiz_burst": {
+      const question = pickRandom(multipleChoiceQuestions);
       return {
         type,
         title: "Quiz Burst Face-Off",
         prompt: pickRandom(quizBurstPrompts),
-        challenge: `1v1 quick-fire question: ${pickRandom(bibleQuestions)}`,
+        challenge: question.question,
         instructions:
-          "Pick two teams to face off first, then rotate challengers or keep the winner on the floor.",
+          "Show the question on the game screen. Leaders answer from their phones; fastest correct answer wins.",
         scoringGuide:
-          "Fastest correct answer wins the duel. Score the winner, runner-up, and any teams waiting for a follow-up round.",
+          "Award the fastest correct team first. Use answer order for runner-up or bonus points.",
         twist: pickRandom(twists),
         requiresVoting: false,
+        answerOptions: shuffle(question.options),
+        correctAnswer: question.correctAnswer,
       };
+    }
 
     case "bible_speed":
       return {

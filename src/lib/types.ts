@@ -61,6 +61,15 @@ export type VoteRow = {
   target_team_id: string;
 };
 
+export type AnswerSubmission = {
+  id: string;
+  round_id: string;
+  team_id: string;
+  answer: string;
+  is_correct: boolean;
+  submitted_at: string;
+};
+
 export type ScoreEvent = {
   id: string;
   room_id: string;
@@ -87,6 +96,8 @@ export type RoundRecord = {
   target_team_id: string | null;
   is_final?: boolean | null;
   timer_seconds?: number | null;
+  answer_options?: string[] | null;
+  correct_answer?: string | null;
   created_at: string;
 };
 
@@ -100,4 +111,6 @@ export type RoundDefinition = {
   twist?: string;
   requiresVoting: boolean;
   isFinal?: boolean;
+  answerOptions?: string[];
+  correctAnswer?: string;
 };

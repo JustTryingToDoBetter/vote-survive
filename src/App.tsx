@@ -34,6 +34,7 @@ import { useSoundEffects } from "./hooks/useSoundEffects";
 import { supabase } from "./lib/supabase";
 import type {
   AppMode,
+  AnswerSubmission,
   Room,
   RoundDefinition,
   RoundRecord,
@@ -130,6 +131,10 @@ function toRoundRecord(row: Record<string, unknown>): RoundRecord {
       (row.is_final as boolean | null | undefined) ??
       roundType === "final_double",
     timer_seconds: (row.timer_seconds as number | null | undefined) ?? null,
+    answer_options: Array.isArray(row.answer_options)
+      ? (row.answer_options as string[])
+      : null,
+    correct_answer: (row.correct_answer as string | null | undefined) ?? null,
     created_at: String(row.created_at),
   };
 }
@@ -218,6 +223,7 @@ export default function App() {
   const [activeRound, setActiveRound] = useState<RoundRecord | null>(null);
   const [rounds, setRounds] = useState<RoundRecord[]>([]);
   const [votes, setVotes] = useState<VoteRow[]>([]);
+  const [answerSubmissions, setAnswerSubmissions] = useState<AnswerSubmission[]>([]);
   const [scoreEvents, setScoreEvents] = useState<ScoreEvent[]>([]);
   const [leaderTeam, setLeaderTeam] = useState<Team | null>(null);
   const [roomCodeInput, setRoomCodeInput] = useState(initialRoomCode);
@@ -296,6 +302,23 @@ export default function App() {
     return votes.some((vote) => vote.voter_team_id === leaderTeam.id);
   }, [activeRound, leaderTeam, votes]);
 
+  const leaderAnswer = useMemo(() => {
+    if (!leaderTeam || !activeRound) return null;
+    return (
+      answerSubmissions.find((submission) => submission.team_id === leaderTeam.id) ??
+      null
+    );
+  }, [activeRound, answerSubmissions, leaderTeam]);
+
+  const sortedAnswerSubmissions = useMemo(
+    () =>
+      [...answerSubmissions].sort(
+        (a, b) =>
+          new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
+      ),
+    [answerSubmissions]
+  );
+
   const effectiveLeaderTeam = useMemo(() => {
     if (!leaderTeam) return null;
     return teams.find((team) => team.id === leaderTeam.id) ?? leaderTeam;
@@ -369,15 +392,26 @@ export default function App() {
 
       if (!currentRound) {
         setVotes([]);
+        setAnswerSubmissions([]);
       } else {
-        const { data: voteRows, error: voteError } = await supabase
-          .from("votes")
-          .select("*")
-          .eq("round_id", currentRound.id);
+        const [
+          { data: voteRows, error: voteError },
+          { data: answerRows, error: answerError },
+        ] = await Promise.all([
+          supabase.from("votes").select("*").eq("round_id", currentRound.id),
+          supabase
+            .from("answer_submissions")
+            .select("*")
+            .eq("round_id", currentRound.id)
+            .order("submitted_at", { ascending: true }),
+        ]);
 
         if (voteError) throw voteError;
         if (requestId !== refreshSequenceRef.current) return;
         setVotes((voteRows ?? []) as VoteRow[]);
+        if (!answerError) {
+          setAnswerSubmissions((answerRows ?? []) as AnswerSubmission[]);
+        }
       }
 
       const { data: scoreRows, error: scoreError } = await supabase
@@ -514,6 +548,16 @@ export default function App() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "votes", filter: `round_id=eq.${activeRoundId}` },
+        () => queueRoomRefresh(room.id, 60)
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "answer_submissions",
+          filter: `round_id=eq.${activeRoundId}`,
+        },
         () => queueRoomRefresh(room.id, 60)
       )
       .subscribe();
@@ -657,6 +701,8 @@ export default function App() {
         status,
         is_final: definition.isFinal ?? false,
         timer_seconds: definition.requiresVoting ? selectedTimer : null,
+        answer_options: definition.answerOptions ?? null,
+        correct_answer: definition.correctAnswer ?? null,
       };
 
       const { error } = await supabase.from("rounds").insert(roundPayload);
@@ -664,6 +710,8 @@ export default function App() {
       if (error) {
         const legacyPayload: Partial<typeof roundPayload> = { ...roundPayload };
         delete legacyPayload.timer_seconds;
+        delete legacyPayload.answer_options;
+        delete legacyPayload.correct_answer;
         const { error: retryError } = await supabase.from("rounds").insert(legacyPayload);
 
         if (retryError) {
@@ -727,6 +775,51 @@ export default function App() {
     });
     if (room) queueRoomRefresh(room.id, 250);
     sound.play("voteSubmit");
+  }
+
+  async function submitAnswer(answer: string) {
+    if (!activeRound || !leaderTeam || !activeRound.correct_answer) return;
+
+    const submittedAt = new Date().toISOString();
+    const isCorrect = answer === activeRound.correct_answer;
+
+    const { error } = await supabase.from("answer_submissions").upsert(
+      {
+        round_id: activeRound.id,
+        team_id: leaderTeam.id,
+        answer,
+        is_correct: isCorrect,
+        submitted_at: submittedAt,
+      },
+      { onConflict: "round_id,team_id" }
+    );
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    setAnswerSubmissions((current) => {
+      const optimistic = {
+        id: `optimistic-answer-${leaderTeam.id}`,
+        round_id: activeRound.id,
+        team_id: leaderTeam.id,
+        answer,
+        is_correct: isCorrect,
+        submitted_at: submittedAt,
+      };
+
+      if (current.some((submission) => submission.team_id === leaderTeam.id)) {
+        return current.map((submission) =>
+          submission.team_id === leaderTeam.id ? optimistic : submission
+        );
+      }
+
+      return [...current, optimistic];
+    });
+
+    if (room) queueRoomRefresh(room.id, 150);
+    sound.play(isCorrect ? "score" : "voteSubmit");
   }
 
   const lockVotes = useCallback(async () => {
@@ -959,6 +1052,7 @@ export default function App() {
           teams={teams}
           sortedTeams={sortedTeams}
           activeRound={activeRound}
+          answerSubmissions={sortedAnswerSubmissions}
           voteCounts={voteCounts}
           targetTeam={targetTeam}
           rivalTeam={rivalTeam}
@@ -1003,6 +1097,8 @@ export default function App() {
           soundEnabled={sound.enabled}
           toggleSound={() => sound.setEnabled(!sound.enabled)}
           submitVote={submitVote}
+          submitAnswer={submitAnswer}
+          leaderAnswer={leaderAnswer}
         />
       )}
 
@@ -1129,6 +1225,7 @@ function HostScreen(props: {
   teams: Team[];
   sortedTeams: Team[];
   activeRound: RoundRecord | null;
+  answerSubmissions: AnswerSubmission[];
   voteCounts: { team: Team; count: number }[];
   targetTeam: Team | null;
   rivalTeam: Team | null;
@@ -1196,6 +1293,8 @@ function HostScreen(props: {
           props.activeRound.round_type === "voting" ||
           props.activeRound.round_type === "steal",
         isFinal: props.activeRound.is_final ?? false,
+        answerOptions: props.activeRound.answer_options ?? undefined,
+        correctAnswer: props.activeRound.correct_answer ?? undefined,
       }
     : null;
 
@@ -1349,6 +1448,15 @@ function HostScreen(props: {
               />
             )}
           </div>
+
+          {props.activeRound && props.activeRound.status !== "complete" && props.activeRound.status !== "winner" && (
+            <AnswerRacePanel
+              round={props.activeRound}
+              submissions={props.answerSubmissions}
+              teams={props.teams}
+              applyScore={props.applyScore}
+            />
+          )}
 
           {props.activeRound && props.activeRound.status !== "complete" && props.activeRound.status !== "winner" && (
             <div className="game-card">
@@ -1663,6 +1771,60 @@ function TimerControls(props: {
   );
 }
 
+function AnswerRacePanel(props: {
+  round: RoundRecord;
+  submissions: AnswerSubmission[];
+  teams: Team[];
+  applyScore: (teamId: string, delta: number, reason: string) => void;
+}) {
+  if (!props.round.correct_answer || !props.round.answer_options?.length) return null;
+
+  const correctSubmissions = props.submissions.filter((submission) => submission.is_correct);
+  const fastestCorrect = correctSubmissions[0] ?? null;
+
+  return (
+    <div className="game-card answer-race-panel">
+      <div className="score-panel-top">
+        <div>
+          <p className="section-kicker">Answer race</p>
+          <h2>Fastest correct wins</h2>
+        </div>
+        {fastestCorrect && (
+          <button
+            className="primary-btn"
+            onClick={() =>
+              props.applyScore(fastestCorrect.team_id, 10, "Fastest correct answer")
+            }
+          >
+            <Trophy size={18} />
+            Award fastest +10
+          </button>
+        )}
+      </div>
+
+      <div className="answer-race-list">
+        {props.submissions.length === 0 && (
+          <p className="muted-text">No answers submitted yet.</p>
+        )}
+        {props.submissions.map((submission, index) => {
+          const team = props.teams.find((entry) => entry.id === submission.team_id);
+          return (
+            <div
+              className={`answer-race-row ${submission.is_correct ? "is-correct" : "is-wrong"}`}
+              key={submission.id}
+            >
+              <span>#{index + 1}</span>
+              <strong>{team?.name ?? "Team"}</strong>
+              <b>{submission.answer}</b>
+              <em>{submission.is_correct ? "Correct" : "Wrong"}</em>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AdminContentEditor(props: {
   teams: Team[];
   activeRound: RoundRecord | null;
@@ -1799,17 +1961,25 @@ function LeaderScreen(props: {
   activeRound: RoundRecord | null;
   secondsLeft: number;
   leaderHasVoted: boolean;
+  leaderAnswer: AnswerSubmission | null;
   soundEnabled: boolean;
   toggleSound: () => void;
   submitVote: (targetTeamId: string) => void;
+  submitAnswer: (answer: string) => void;
 }) {
-  const voteOpen =
-    Boolean(
-      props.activeRound &&
-        (props.activeRound.round_type === "voting" ||
-          props.activeRound.round_type === "steal") &&
-        props.activeRound.status === "voting"
-    );
+  const isVoteRound =
+    props.activeRound?.round_type === "voting" ||
+    props.activeRound?.round_type === "steal";
+  const voteOpen = Boolean(
+    props.activeRound &&
+      isVoteRound &&
+      !props.activeRound.target_team_id &&
+      props.activeRound.status !== "complete" &&
+      props.activeRound.status !== "winner"
+  );
+  const answerOpen = Boolean(
+    props.activeRound?.answer_options?.length && props.activeRound.correct_answer
+  );
 
   return (
     <motion.main
@@ -1858,10 +2028,17 @@ function LeaderScreen(props: {
           <PlayerTaskPanel
             round={props.activeRound}
             voteOpen={voteOpen}
+            answerOpen={answerOpen}
             secondsLeft={props.secondsLeft}
           />
 
-          {voteOpen ? (
+          {answerOpen ? (
+            <AnswerOptionGrid
+              round={props.activeRound}
+              selectedAnswer={props.leaderAnswer?.answer ?? null}
+              submitAnswer={props.submitAnswer}
+            />
+          ) : voteOpen ? (
             <>
               <div className="vote-tile-grid">
                 {props.teams
@@ -1916,6 +2093,7 @@ function InfoChip(props: { icon: React.ReactNode; text: string }) {
 function PlayerTaskPanel(props: {
   round: RoundRecord;
   voteOpen: boolean;
+  answerOpen?: boolean;
   secondsLeft: number;
 }) {
   return (
@@ -1933,14 +2111,44 @@ function PlayerTaskPanel(props: {
         )}
       </div>
 
-      <h3>{props.voteOpen ? props.round.prompt : props.round.challenge}</h3>
+      <h3>
+        {props.answerOpen
+          ? "Choose your answer"
+          : props.voteOpen
+          ? props.round.prompt
+          : props.round.challenge}
+      </h3>
       <p>
-        {props.voteOpen
+        {props.answerOpen
+          ? "The question is on the main screen. Fastest correct answer wins."
+          : props.voteOpen
           ? "Vote for the team you want under pressure. You cannot vote for yourself."
           : props.round.prompt}
       </p>
       {props.round.twist && <strong className="player-task-twist">{props.round.twist}</strong>}
     </section>
+  );
+}
+
+function AnswerOptionGrid(props: {
+  round: RoundRecord;
+  selectedAnswer: string | null;
+  submitAnswer: (answer: string) => void;
+}) {
+  return (
+    <div className="answer-option-grid">
+      {(props.round.answer_options ?? []).map((option) => (
+        <motion.button
+          key={option}
+          className={`answer-option ${props.selectedAnswer === option ? "is-selected" : ""}`}
+          onClick={() => props.submitAnswer(option)}
+          whileTap={{ scale: 0.97 }}
+        >
+          <strong>{option}</strong>
+          {props.selectedAnswer === option && <span>Submitted</span>}
+        </motion.button>
+      ))}
+    </div>
   );
 }
 
@@ -2249,12 +2457,114 @@ function placeLabel(index: number, total: number) {
   return `${index + 1}th place`;
 }
 
+function FinalRevealStage(props: {
+  winner: Team;
+  teams: Team[];
+  reducedMotion: boolean;
+}) {
+  const winnerVideo = getWinnerVideo(props.winner);
+  const lastTeam = props.teams[props.teams.length - 1] ?? null;
+  const loserVideo = lastTeam ? getLoserVideo(lastTeam) : null;
+  const revealOrder = [...props.teams].reverse();
+
+  return (
+    <motion.section
+      className="winner-panel final-reveal-stage"
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+    >
+      <ConfettiBurst reducedMotion={props.reducedMotion} />
+      <div className="final-reveal-header">
+        <p className="section-kicker">Final scores</p>
+        <h2>Last to first reveal</h2>
+      </div>
+
+      <div className="final-reveal-grid">
+        <div className="final-reveal-list">
+          {revealOrder.map((team, revealIndex) => {
+            const originalIndex = props.teams.findIndex((entry) => entry.id === team.id);
+            const isWinner = team.id === props.winner.id;
+
+            return (
+              <motion.div
+                className={`final-reveal-card ${isWinner ? "is-winner" : ""} ${originalIndex === props.teams.length - 1 ? "is-last" : ""}`}
+                key={team.id}
+                initial={{ opacity: 0, x: -28 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: props.reducedMotion ? 0 : revealIndex * 0.7 }}
+              >
+                <span>{placeLabel(originalIndex, props.teams.length)}</span>
+                <div className="final-reveal-team">
+                  <TeamAvatar
+                    emoji={team.avatar_emoji ?? "⭐"}
+                    image={team.avatar_image ?? ""}
+                    name={team.name}
+                  />
+                  <strong>{team.name}</strong>
+                </div>
+                <b>{team.score} pts</b>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        <motion.div
+          className="final-winner-feature"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: props.reducedMotion ? 0 : revealOrder.length * 0.7 }}
+        >
+          <TeamAvatar
+            emoji={props.winner.avatar_emoji ?? "⭐"}
+            image={props.winner.avatar_image ?? ""}
+            name={props.winner.name}
+            className="winner-avatar"
+          />
+          <div>
+            <p className="section-kicker">Winner</p>
+            <h3>{props.winner.name}</h3>
+            <span>{props.winner.score} points</span>
+          </div>
+          {winnerVideo && (
+            <video
+              className="winner-video final-feature-video"
+              src={winnerVideo}
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
+          )}
+          {lastTeam && loserVideo && (
+            <video
+              className="loser-video final-small-video"
+              src={loserVideo}
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
+          )}
+        </motion.div>
+      </div>
+    </motion.section>
+  );
+}
+
 function WinnerReveal(props: {
   winner: Team;
   teams: Team[];
   maxScore: number;
   reducedMotion: boolean;
 }) {
+  return (
+    <FinalRevealStage
+      winner={props.winner}
+      teams={props.teams}
+      reducedMotion={props.reducedMotion}
+    />
+  );
+
   const winnerVideo = getWinnerVideo(props.winner);
   const lastTeam = props.teams[props.teams.length - 1] ?? null;
   const loserVideo = lastTeam ? getLoserVideo(lastTeam) : null;
@@ -2286,7 +2596,7 @@ function WinnerReveal(props: {
         <div className="winner-video-wrap">
           <video
             className="winner-video"
-            src={winnerVideo}
+            src={winnerVideo ?? undefined}
             autoPlay
             loop
             muted
@@ -2311,7 +2621,7 @@ function WinnerReveal(props: {
           <p className="section-kicker">Loser video</p>
           <video
             className="winner-video"
-            src={loserVideo}
+            src={loserVideo ?? undefined}
             autoPlay
             loop
             muted
