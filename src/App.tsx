@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { QRCodeSVG } from "qrcode.react";
 import eagleWinnerVideo from "./assets/winners/eagle.mp4";
 import lionWinnerVideo from "./assets/winners/lion.mp4";
 import sheepWinnerVideo from "./assets/winners/sheep.mp4";
@@ -15,7 +14,6 @@ import {
   Gamepad2,
   Music2,
   Play,
-  QrCode,
   RotateCcw,
   Sparkles,
   TimerReset,
@@ -133,11 +131,6 @@ function normalizeTeam(team: Team, fallbackIndex: number): Team {
     avatar_image: team.avatar_image ?? preset.avatarImage,
     color: team.color ?? preset.color,
   };
-}
-
-function getJoinUrl(roomCode: string) {
-  if (typeof window === "undefined") return `/join?room=${roomCode}`;
-  return `${window.location.origin}/join?room=${roomCode}`;
 }
 
 function getWinnerVideo(team: Team) {
@@ -261,8 +254,6 @@ export default function App() {
   );
 
   const winnerTeam = sortedTeams[0] ?? null;
-  const joinUrl = room ? getJoinUrl(room.code) : "";
-
   useEffect(() => {
     if (
       activeRound?.status === "voting" &&
@@ -680,7 +671,6 @@ export default function App() {
           revealWinner={revealWinner}
           showWinner={showWinner}
           winnerTeam={winnerTeam}
-          joinUrl={joinUrl}
           reducedMotion={Boolean(reducedMotion)}
         />
       )}
@@ -805,7 +795,6 @@ function HostScreen(props: {
   revealWinner: () => void;
   showWinner: boolean;
   winnerTeam: Team | null;
-  joinUrl: string;
   reducedMotion: boolean;
 }) {
   const maxVotes = Math.max(1, ...props.voteCounts.map((entry) => entry.count));
@@ -1010,14 +999,13 @@ function HostScreen(props: {
             <div className="panel-topline">
               <div>
                 <p className="section-kicker">Lobby join</p>
-                <h3>Scan to join</h3>
+                <h3>Room code</h3>
               </div>
-              <QrCode size={20} />
             </div>
 
-            <div className="qr-wrap">
-              <QRCodeSVG value={props.joinUrl} size={164} />
-              <p className="muted-text">Leaders scan, then enter their team code.</p>
+            <div className="room-code-panel">
+              <strong>{props.room.code}</strong>
+              <p className="muted-text">Leaders enter this room code, then use their team code below.</p>
             </div>
 
             <div className="team-code-list">

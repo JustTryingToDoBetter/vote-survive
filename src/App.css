@@ -687,11 +687,22 @@ select:focus {
   margin-top: 18px;
 }
 
-.qr-wrap {
+.room-code-panel {
   display: grid;
   gap: 12px;
   place-items: center;
   margin: 12px 0 18px;
+  border-radius: 24px;
+  padding: 18px;
+  background: linear-gradient(135deg, #fff7ed, #ecfeff);
+  text-align: center;
+}
+
+.room-code-panel strong {
+  color: #0b1023;
+  font-size: clamp(2rem, 6vw, 3.6rem);
+  line-height: 1;
+  letter-spacing: 0.08em;
 }
 
 .team-code-card {
