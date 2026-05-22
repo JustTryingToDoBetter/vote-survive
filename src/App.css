@@ -1100,3 +1100,137 @@ a {
     border-radius: 16px;
   }
 }
+/* src/App.css */
+
+.all-team-scoring {
+  position: relative;
+  overflow: hidden;
+  border-radius: 32px;
+  padding: 26px;
+  color: #111827;
+  background:
+    radial-gradient(circle at top right, rgba(253, 224, 71, 0.42), transparent 30%),
+    linear-gradient(135deg, #ffffff, #fff7ed 48%, #ecfeff);
+  box-shadow: 0 26px 60px rgba(15, 23, 42, 0.1);
+}
+
+.all-team-scoring h3 {
+  margin: 18px 0;
+  color: #08072d;
+  font-size: clamp(1.4rem, 3vw, 2.4rem);
+  line-height: 1.1;
+}
+
+.pressure-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 18px;
+  border-radius: 22px;
+  padding: 16px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #7c3aed, #ff4d6d);
+}
+
+.pressure-banner strong {
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.pressure-banner span {
+  font-weight: 850;
+}
+
+.rubric-card {
+  margin: 20px 0;
+  border: 2px solid rgba(17, 24, 39, 0.06);
+  border-radius: 26px;
+  padding: 18px;
+  background: #ffffff;
+}
+
+.rubric-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px 18px;
+  margin-top: 12px;
+  font-weight: 900;
+}
+
+.rubric-grid strong {
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.score-team-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.score-team-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 3px solid rgba(17, 24, 39, 0.05);
+  border-radius: 26px;
+  padding: 14px;
+  background: #ffffff;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+}
+
+.score-team-row strong,
+.score-team-row span {
+  display: block;
+}
+
+.score-team-row span {
+  margin-top: 3px;
+  color: #64748b;
+  font-weight: 850;
+}
+
+.quick-score-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.quick-score-actions button {
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 12px;
+  color: #ffffff;
+  background: var(--team-color);
+  font-weight: 950;
+}
+
+.quick-score-actions .mini-danger {
+  background: #111827;
+}
+
+.finish-round-btn {
+  width: 100%;
+  margin-top: 18px;
+}
+
+@media (max-width: 760px) {
+  .score-team-row {
+    grid-template-columns: 46px 1fr;
+  }
+
+  .quick-score-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .quick-score-actions button {
+    flex: 1;
+  }
+}

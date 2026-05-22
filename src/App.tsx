@@ -322,7 +322,24 @@ export default function App() {
       })
       .eq("id", activeRound.id);
   }
+async function updateTeamScore(teamId: string, delta: number) {
+  const selectedTeam = teams.find((team) => team.id === teamId);
+  if (!selectedTeam) return;
 
+  await supabase
+    .from("teams")
+    .update({ score: selectedTeam.score + delta })
+    .eq("id", teamId);
+}
+
+async function completeRound() {
+  if (!activeRound) return;
+
+  await supabase
+    .from("rounds")
+    .update({ status: "complete" })
+    .eq("id", activeRound.id);
+}
   async function awardPoints(points: number) {
     if (!activeRound?.target_team_id) return;
 
@@ -370,7 +387,8 @@ export default function App() {
           secondsLeft={secondsLeft}
           startRound={startRound}
           lockVotes={lockVotes}
-          awardPoints={awardPoints}
+          updateTeamScore={updateTeamScore}
+          completeRound={completeRound}
         />
       )}
 
@@ -543,7 +561,7 @@ function HomeScreen(props: {
 }
 
 function HostScreen(props: {
-  room: Room;
+ room: Room;
   teams: Team[];
   sortedTeams: Team[];
   activeRound: Round | null;
@@ -554,7 +572,8 @@ function HostScreen(props: {
   secondsLeft: number;
   startRound: () => void;
   lockVotes: () => void;
-  awardPoints: (points: number) => void;
+  updateTeamScore: (teamId: string, delta: number) => void;
+  completeRound: () => void;
 }) {
   const totalVotes = props.voteCounts.reduce((sum, item) => sum + item.count, 0);
   const maxScore = Math.max(1, ...props.teams.map((team) => team.score));
@@ -628,11 +647,13 @@ function HostScreen(props: {
           )}
 
           {props.activeRound?.status === "locked" && props.targetTeam && (
-            <ChallengeReveal
+            <AllTeamScoringPanel
+              teams={props.teams}
+              sortedTeams={props.sortedTeams}
               targetTeam={props.targetTeam}
-              rivalTeam={props.rivalTeam}
               challenge={props.activeRound.challenge}
-              awardPoints={props.awardPoints}
+              updateTeamScore={props.updateTeamScore}
+              completeRound={props.completeRound}
             />
           )}
 
@@ -847,38 +868,78 @@ function VoteBar(props: {
   );
 }
 
-function ChallengeReveal(props: {
-  targetTeam: Team;
-  rivalTeam: Team | null;
+function AllTeamScoringPanel(props: {
+  teams: Team[];
+  sortedTeams: Team[];
+  targetTeam: Team | null;
   challenge: string;
-  awardPoints: (points: number) => void;
+  updateTeamScore: (teamId: string, delta: number) => void;
+  completeRound: () => void;
 }) {
   return (
     <motion.div
-      className="challenge-reveal"
+      className="all-team-scoring"
       initial={{ scale: 0.94, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
     >
       <div className="arena-label">
         <Zap size={18} />
-        Challenge Arena
+        All Teams Play
       </div>
 
-      <div className="battle-line">
-        <strong>{props.targetTeam.name}</strong>
-        <span>VS</span>
-        <strong>{props.rivalTeam?.name ?? "Host Pick"}</strong>
-      </div>
+      {props.targetTeam && (
+        <div className="pressure-banner">
+          <strong>{props.targetTeam.name}</strong>
+          <span>received the most votes and gets the pressure twist.</span>
+        </div>
+      )}
 
       <h3>{props.challenge}</h3>
 
-      <div className="score-actions">
-        <button onClick={() => props.awardPoints(5)}>Success +5</button>
-        <button onClick={() => props.awardPoints(10)}>Big Win +10</button>
-        <button className="danger-btn" onClick={() => props.awardPoints(-3)}>
-          Fail -3
-        </button>
+      <div className="rubric-card">
+        <p className="section-kicker">Suggested Scoring</p>
+        <div className="rubric-grid">
+          <span>🥇 1st</span>
+          <strong>+10</strong>
+          <span>🥈 2nd</span>
+          <strong>+7</strong>
+          <span>🥉 3rd</span>
+          <strong>+5</strong>
+          <span>Participation</span>
+          <strong>+2</strong>
+        </div>
       </div>
+
+      <div className="score-team-list">
+        {props.sortedTeams.map((team, index) => (
+          <div className="score-team-row" key={team.id} style={teamStyle(index)}>
+            <div className="team-avatar">{getInitials(team.name)}</div>
+
+            <div>
+              <strong>{team.name}</strong>
+              <span>{team.score} pts</span>
+            </div>
+
+            <div className="quick-score-actions">
+              <button onClick={() => props.updateTeamScore(team.id, 2)}>+2</button>
+              <button onClick={() => props.updateTeamScore(team.id, 5)}>+5</button>
+              <button onClick={() => props.updateTeamScore(team.id, 7)}>+7</button>
+              <button onClick={() => props.updateTeamScore(team.id, 10)}>+10</button>
+              <button
+                className="mini-danger"
+                onClick={() => props.updateTeamScore(team.id, -3)}
+              >
+                -3
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button className="primary-btn finish-round-btn" onClick={props.completeRound}>
+        <Trophy size={18} />
+        Finish Round
+      </button>
     </motion.div>
   );
 }

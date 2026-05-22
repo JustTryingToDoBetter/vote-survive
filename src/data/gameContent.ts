@@ -1,3 +1,4 @@
+// src/data/gameContent.ts
 export const DEFAULT_TEAMS = [
   "Team Blaze",
   "Team Courage",
@@ -6,63 +7,74 @@ export const DEFAULT_TEAMS = [
 ];
 
 export const votingQuestions = [
-  "Which team would crack first under pressure?",
-  "Which team is most likely to fumble the final round?",
-  "Which team needs a miracle to survive this challenge?",
-  "Which team talks big but might fold tonight?",
-  "Which team would lose a wilderness survival challenge?",
-  "Which team is most likely to get distracted by snacks?",
-  "Which team would panic first in a Bible sword drill?",
-  "Which team should be sent into the challenge arena?",
-  "Which team looks confident but is secretly nervous?",
-  "Which team would get eliminated first in a youth camp challenge?",
-  "Which team has the weakest celebration dance?",
-  "Which team would forget the rules immediately after hearing them?",
+  "Which team should get the pressure penalty this round?",
+  "Which team looks most likely to flop this challenge?",
+  "Which team should start with the hardest version of the challenge?",
+  "Which team should get exposed this round?",
+  "Which team has been talking the most and needs to prove it?",
+  "Which team should go first under pressure?",
+  "Which team needs to back up their confidence?",
+  "Which team should receive the chaos card?",
 ];
 
-export const challenges = [
-  "Battle Round: The voted team chooses a rival. Both teams have 30 seconds to create the best team chant.",
-  "Steal Round: The voted team challenges one rival. Winner steals 3 points from the loser.",
-  "Pressure Round: The voted team has 45 seconds to act out a Bible story. If they fail, another team may steal.",
-  "Face-Off: The voted team chooses one rival for a 20-second dance battle. Crowd decides the winner.",
-  "Quick Preach: One player from the voted team must preach for 30 seconds on why their team deserves to win.",
-  "No-Laugh Battle: The voted team picks a rival. Each team sends one player. First to laugh loses.",
-  "Bible Freeze Frame: The voted team and a rival must create a frozen Bible scene. Best scene wins.",
-  "Ad Battle: The voted team picks a rival. Both teams make a 20-second advert for Youth Night.",
-  "Rap Battle: The voted team challenges a rival to a 4-line rap about their team name.",
-  "Speed Build: The voted team makes a human statue called 'Champions Under Pressure'.",
+export const allPlayChallenges = [
+  {
+    title: "Team Chant Battle",
+    description:
+      "Every team gets 30 seconds to create a chant. Loudest and most creative team wins.",
+    scoringHint: "1st +10, 2nd +7, 3rd +5, everyone else +2",
+  },
+  {
+    title: "Bible Freeze Frame",
+    description:
+      "Every team must create a frozen Bible scene. Host chooses the best scene.",
+    scoringHint: "Best scene +10, funniest +7, clearest Bible story +5, participation +2",
+  },
+  {
+    title: "Youth Advert Battle",
+    description:
+      "Every team makes a 20-second advert inviting people to youth.",
+    scoringHint: "Best advert +10, best slogan +7, funniest +5, participation +2",
+  },
+  {
+    title: "No-Laugh Face-Off",
+    description:
+      "Each team sends one player. Players try not to laugh while others perform.",
+    scoringHint: "Last standing +10, second +7, third +5, participation +2",
+  },
+  {
+    title: "Speed Acting",
+    description:
+      "Every team acts out the same Bible story. Best performance wins.",
+    scoringHint: "Best acting +10, funniest +7, most accurate +5, participation +2",
+  },
+  {
+    title: "Quick Quiz Burst",
+    description:
+      "Every team answers the same Bible/general knowledge question. Fastest correct answers score highest.",
+    scoringHint: "Fastest +10, second +7, third +5, correct participation +2",
+  },
+  {
+    title: "Human Statue",
+    description:
+      "Every team builds a human statue called 'Champions Under Pressure'.",
+    scoringHint: "Best statue +10, most creative +7, funniest +5, participation +2",
+  },
+  {
+    title: "Dance Battle",
+    description:
+      "Every team gets 20 seconds to perform a celebration dance.",
+    scoringHint: "Best dance +10, best energy +7, funniest +5, participation +2",
+  },
 ];
 
-export const quizBursts = [
-  {
-    prompt: "Quiz Burst: Who built the ark?",
-    answer: "Noah",
-  },
-  {
-    prompt: "Quiz Burst: Who defeated Goliath?",
-    answer: "David",
-  },
-  {
-    prompt: "Quiz Burst: Who was swallowed by a great fish?",
-    answer: "Jonah",
-  },
-  {
-    prompt: "Quiz Burst: Who interpreted Pharaoh's dreams?",
-    answer: "Joseph",
-  },
-  {
-    prompt: "Quiz Burst: Who denied Jesus three times?",
-    answer: "Peter",
-  },
-];
-
-export const twistCards = [
-  "Reverse Vote: The team with the least votes enters the arena.",
-  "Double Points: This challenge is worth double.",
-  "All Play: Every team must compete. Best team wins.",
-  "Mercy Card: The voted team may pass, but loses 2 points.",
-  "Rival Pick: The voted team chooses who they battle.",
-  "Steal Card: Winner steals 3 points from another team.",
+export const pressureTwists = [
+  "Pressure Penalty: The most-voted team must perform first.",
+  "Chaos Card: The most-voted team only gets 20 seconds to prepare.",
+  "Comeback Card: The last-place team gets +3 bonus points if they commit fully.",
+  "Double Energy: Host may award +3 bonus points for the loudest team.",
+  "Steal Chance: The winning team may steal 2 points from the most-voted team.",
+  "Mercy Round: Every team gets at least 2 points if they participate.",
 ];
 
 export function randomItem<T>(items: T[]): T {
@@ -70,20 +82,11 @@ export function randomItem<T>(items: T[]): T {
 }
 
 export function buildRoundContent() {
-  const shouldUseQuizBurst = Math.random() < 0.25;
-  const twist = Math.random() < 0.35 ? randomItem(twistCards) : null;
-
-  if (shouldUseQuizBurst) {
-    const quiz = randomItem(quizBursts);
-
-    return {
-      question: "Vote for the team that should answer the Quiz Burst under pressure.",
-      challenge: `${quiz.prompt} Answer: ${quiz.answer}${twist ? ` | Twist: ${twist}` : ""}`,
-    };
-  }
+  const challenge = randomItem(allPlayChallenges);
+  const twist = randomItem(pressureTwists);
 
   return {
     question: randomItem(votingQuestions),
-    challenge: `${randomItem(challenges)}${twist ? ` | Twist: ${twist}` : ""}`,
+    challenge: `${challenge.title}: ${challenge.description} | Scoring: ${challenge.scoringHint} | Twist: ${twist}`,
   };
 }
