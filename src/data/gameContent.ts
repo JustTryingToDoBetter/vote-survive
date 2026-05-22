@@ -1,7 +1,7 @@
 // src/data/gameContent.ts
 export const DEFAULT_TEAMS = [
-  "Team Blaze",
-  "Team Courage",
+  "PathFinders",
+  "The Chosen",
   "Team Radiant",
   "Team Victory",
 ];

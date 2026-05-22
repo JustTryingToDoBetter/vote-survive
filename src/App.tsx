@@ -340,25 +340,7 @@ async function completeRound() {
     .update({ status: "complete" })
     .eq("id", activeRound.id);
 }
-  async function awardPoints(points: number) {
-    if (!activeRound?.target_team_id) return;
 
-    const selectedTeam = teams.find(
-      (team) => team.id === activeRound.target_team_id
-    );
-
-    if (!selectedTeam) return;
-
-    await supabase
-      .from("teams")
-      .update({ score: selectedTeam.score + points })
-      .eq("id", selectedTeam.id);
-
-    await supabase
-      .from("rounds")
-      .update({ status: "complete" })
-      .eq("id", activeRound.id);
-  }
 
   return (
     <AnimatePresence mode="wait">
