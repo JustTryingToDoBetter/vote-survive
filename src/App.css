@@ -954,6 +954,39 @@ textarea {
   gap: 18px;
 }
 
+.player-task-panel {
+  display: grid;
+  gap: 12px;
+  border-radius: 24px;
+  padding: 18px;
+  background: linear-gradient(135deg, #f8fafc, #ecfeff);
+}
+
+.player-task-panel h2,
+.player-task-panel h3,
+.player-task-panel p {
+  margin: 0;
+}
+
+.player-task-panel h3 {
+  color: #0b1023;
+  font-size: clamp(1.45rem, 8vw, 2.8rem);
+  line-height: 1.04;
+}
+
+.player-task-panel p {
+  color: #5b6472;
+  line-height: 1.45;
+}
+
+.player-task-twist {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 9px 12px;
+  color: #7c2d12;
+  background: #ffedd5;
+}
+
 .vote-tile-grid {
   display: grid;
   gap: 12px;

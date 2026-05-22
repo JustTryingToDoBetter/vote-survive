@@ -1849,29 +1849,14 @@ function LeaderScreen(props: {
 
       {props.activeRound && (
         <section className="game-card leader-vote-card">
-          <RoundReveal
-            round={{
-              type: props.activeRound.round_type,
-              title: props.activeRound.title,
-              prompt: props.activeRound.prompt,
-              challenge: props.activeRound.challenge,
-              instructions: props.activeRound.instructions ?? "",
-              scoringGuide: props.activeRound.scoring_guide,
-              twist: props.activeRound.twist ?? undefined,
-              requiresVoting: voteOpen,
-              isFinal: props.activeRound.is_final ?? false,
-            }}
+          <PlayerTaskPanel
+            round={props.activeRound}
+            voteOpen={voteOpen}
             secondsLeft={props.secondsLeft}
-            activeStatus={props.activeRound.status}
-            compact
           />
 
           {voteOpen ? (
             <>
-              <p className="muted-text">
-                Choose the team you want under pressure. You cannot vote for yourself.
-              </p>
-
               <div className="vote-tile-grid">
                 {props.teams
                   .filter((team) => team.id !== props.leaderTeam.id)
@@ -1903,8 +1888,8 @@ function LeaderScreen(props: {
             </>
           ) : (
             <div className="challenge-preview">
-              <p className="section-kicker">Stay ready</p>
-              <h3>The host is running this round live. Watch the screen for scoring.</h3>
+              <p className="section-kicker">Task live</p>
+              <h3>{props.activeRound.challenge}</h3>
             </div>
           )}
         </section>
@@ -1919,6 +1904,37 @@ function InfoChip(props: { icon: React.ReactNode; text: string }) {
       {props.icon}
       <span>{props.text}</span>
     </div>
+  );
+}
+
+function PlayerTaskPanel(props: {
+  round: RoundRecord;
+  voteOpen: boolean;
+  secondsLeft: number;
+}) {
+  return (
+    <section className="player-task-panel">
+      <div className="round-reveal-top">
+        <div>
+          <p className="section-kicker">{roundTypeLabels[props.round.round_type]}</p>
+          <h2>{props.round.title}</h2>
+        </div>
+        {props.voteOpen && (
+          <div className="round-mini-stat">
+            <TimerReset size={16} />
+            {props.secondsLeft}s left
+          </div>
+        )}
+      </div>
+
+      <h3>{props.voteOpen ? props.round.prompt : props.round.challenge}</h3>
+      <p>
+        {props.voteOpen
+          ? "Vote for the team you want under pressure. You cannot vote for yourself."
+          : props.round.prompt}
+      </p>
+      {props.round.twist && <strong className="player-task-twist">{props.round.twist}</strong>}
+    </section>
   );
 }
 
@@ -2119,7 +2135,7 @@ function ChallengeRevealCard(props: {
         </div>
       )}
       <h3>{props.round.challenge}</h3>
-      <p className="muted-on-dark">{props.round.scoring_guide}</p>
+      <p className="muted-on-dark">{props.round.prompt}</p>
     </motion.div>
   );
 }
