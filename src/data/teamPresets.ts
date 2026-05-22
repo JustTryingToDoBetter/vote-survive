@@ -11,7 +11,7 @@ export const DEFAULT_TEAMS: TeamStarter[] = [
   {
     name: "Pathfinders",
     animal: "Lion",
-    avatarEmoji: "🦁",
+    avatarEmoji: "L",
     avatarImage: "",
     color: "#f59e0b",
     tone: "Brave and bold",
@@ -19,7 +19,7 @@ export const DEFAULT_TEAMS: TeamStarter[] = [
   {
     name: "The Chosen",
     animal: "Sheep",
-    avatarEmoji: "🐑",
+    avatarEmoji: "S",
     avatarImage: "",
     color: "#14b8a6",
     tone: "Calm and faithful",
@@ -27,7 +27,7 @@ export const DEFAULT_TEAMS: TeamStarter[] = [
   {
     name: "Stripe Warriors",
     animal: "Tiger",
-    avatarEmoji: "🐯",
+    avatarEmoji: "T",
     avatarImage: "",
     color: "#f97316",
     tone: "Fierce and energetic",
@@ -35,7 +35,7 @@ export const DEFAULT_TEAMS: TeamStarter[] = [
   {
     name: "Eagles Wings",
     animal: "Eagle",
-    avatarEmoji: "🦅",
+    avatarEmoji: "E",
     avatarImage: "",
     color: "#0ea5e9",
     tone: "Swift and soaring",

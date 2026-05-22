@@ -31,6 +31,7 @@ export type Team = {
   name: string;
   leader_code: string;
   score: number;
+  joined_at?: string | null;
   animal?: string | null;
   avatar_emoji?: string | null;
   avatar_image?: string | null;

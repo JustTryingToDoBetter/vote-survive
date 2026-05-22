@@ -2,7 +2,8 @@ alter table public.teams
   add column if not exists animal text,
   add column if not exists avatar_emoji text,
   add column if not exists avatar_image text,
-  add column if not exists color text;
+  add column if not exists color text,
+  add column if not exists joined_at timestamptz;
 
 alter table public.rounds
   add column if not exists round_number integer,

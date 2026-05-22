@@ -459,7 +459,7 @@ export default function App() {
 
       const { data: createdRoom, error: roomError } = await supabase
         .from("rooms")
-        .insert({ code, host_pin: hostPin, status: "lobby" })
+        .insert({ code, host_pin: hostPin, status: "active" })
         .select()
         .single();
 
@@ -524,8 +524,17 @@ export default function App() {
 
       if (teamError || !foundTeam) throw new Error("Team code not found.");
 
+      const { error: joinedError } = await supabase
+        .from("teams")
+        .update({ joined_at: new Date().toISOString() })
+        .eq("id", foundTeam.id);
+
+      if (joinedError && !joinedError.message.toLowerCase().includes("joined_at")) {
+        throw joinedError;
+      }
+
       setRoom(foundRoom as Room);
-      setLeaderTeam(normalizeTeam(foundTeam as Team, 0));
+      setLeaderTeam(normalizeTeam({ ...(foundTeam as Team), joined_at: new Date().toISOString() }, 0));
       setMode("leader");
       if (typeof window !== "undefined") {
         const url = new URL(window.location.href);
@@ -727,7 +736,7 @@ export default function App() {
       return;
     }
 
-    await supabase.from("rooms").update({ status: "lobby" }).eq("id", activeRound.room_id);
+    await supabase.from("rooms").update({ status: "active" }).eq("id", activeRound.room_id);
   }
 
   async function revealWinner() {
@@ -754,7 +763,7 @@ export default function App() {
       await Promise.all(
         teams.map((team) => supabase.from("teams").update({ score: 0 }).eq("id", team.id))
       );
-      await supabase.from("rooms").update({ status: "lobby" }).eq("id", room.id);
+      await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
       setShowWinner(false);
       setVotes([]);
       setRounds([]);
@@ -768,6 +777,20 @@ export default function App() {
 
   async function updateTeamContent(teamId: string, patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>) {
     const { error } = await supabase.from("teams").update(patch).eq("id", teamId);
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    if (room) await refreshRoomData(room.id);
+  }
+
+  async function updateRoundContent(
+    roundId: string,
+    patch: Partial<Pick<RoundRecord, "title" | "prompt" | "challenge" | "instructions" | "scoring_guide" | "twist">>
+  ) {
+    const { error } = await supabase.from("rounds").update(patch).eq("id", roundId);
 
     if (error) {
       setLoadError(error.message);
@@ -828,6 +851,7 @@ export default function App() {
           revealWinner={revealWinner}
           resetGame={resetGame}
           updateTeamContent={updateTeamContent}
+          updateRoundContent={updateRoundContent}
           showWinner={showWinner}
           winnerTeam={winnerTeam}
           reducedMotion={Boolean(reducedMotion)}
@@ -987,13 +1011,17 @@ function HostScreen(props: {
   revealWinner: () => void;
   resetGame: () => void;
   updateTeamContent: (teamId: string, patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>) => void;
+  updateRoundContent: (
+    roundId: string,
+    patch: Partial<Pick<RoundRecord, "title" | "prompt" | "challenge" | "instructions" | "scoring_guide" | "twist">>
+  ) => void;
   showWinner: boolean;
   winnerTeam: Team | null;
   reducedMotion: boolean;
 }) {
   const maxVotes = Math.max(1, ...props.voteCounts.map((entry) => entry.count));
   const maxScore = Math.max(1, ...props.sortedTeams.map((team) => team.score));
-  const joinedTeams = props.teams.length;
+  const joinedTeams = props.teams.filter((team) => team.joined_at).length;
   const votingTeams = Math.max(0, props.teams.length);
   const voteProgress = votingTeams > 0 ? Math.round((props.totalVotes / votingTeams) * 100) : 0;
   const audienceUrl =
@@ -1002,7 +1030,7 @@ function HostScreen(props: {
       : `${window.location.origin}/audience?room=${props.room.code}`;
   const roundStatusLabel = props.activeRound
     ? `${roundTypeLabels[props.activeRound.round_type]} - ${props.activeRound.status}`
-    : "Lobby - waiting to start";
+    : "Live room - choose a round";
   const canStartRound =
     !props.activeRound ||
     props.activeRound.status === "complete" ||
@@ -1035,7 +1063,7 @@ function HostScreen(props: {
           <p className="section-kicker">Host screen</p>
           <h1>{props.room.code}</h1>
           <p className="header-helper">
-            Team leaders join with the room code and their team code.
+            The room is live. Leaders can join any time while you run rounds.
           </p>
         </div>
 
@@ -1061,7 +1089,7 @@ function HostScreen(props: {
         <div className="host-main-column">
           <div className="dashboard-grid">
             <HostStatCard label="Round status" value={roundStatusLabel} icon={<Settings size={18} />} />
-            <HostStatCard label="Joined teams" value={`${joinedTeams} ready`} icon={<Users size={18} />} />
+            <HostStatCard label="Joined teams" value={`${joinedTeams}/${props.teams.length} joined`} icon={<Users size={18} />} />
             <HostStatCard label="Voting progress" value={`${voteProgress}%`} icon={<Vote size={18} />} />
             <HostStatCard label="History" value={`${props.rounds.length} rounds`} icon={<Trophy size={18} />} />
           </div>
@@ -1235,14 +1263,14 @@ function HostScreen(props: {
           <div className="game-card">
             <div className="panel-topline">
               <div>
-                <p className="section-kicker">Lobby join</p>
+                <p className="section-kicker">Live join</p>
                 <h3>Room code</h3>
               </div>
             </div>
 
             <div className="room-code-panel">
               <strong>{props.room.code}</strong>
-              <p className="muted-text">Leaders enter this room code, then use their team code below.</p>
+              <p className="muted-text">Leaders can enter mid-game with this room code and their team code.</p>
             </div>
 
             <div className="team-code-list">
@@ -1274,7 +1302,12 @@ function HostScreen(props: {
             />
           </div>
 
-          <AdminContentEditor teams={props.teams} updateTeamContent={props.updateTeamContent} />
+          <AdminContentEditor
+            teams={props.teams}
+            activeRound={props.activeRound}
+            updateTeamContent={props.updateTeamContent}
+            updateRoundContent={props.updateRoundContent}
+          />
         </div>
       </section>
     </motion.main>
@@ -1354,7 +1387,8 @@ function AudienceScreen(props: {
               ) : (
                 <div className="empty-state">
                   <Sparkles size={42} />
-                  <h2>Waiting for the host</h2>
+                  <h2>Live room open</h2>
+                  <p>Round content appears here as soon as the host launches it.</p>
                 </div>
               )}
             </div>
@@ -1430,17 +1464,35 @@ function TimerControls(props: {
 
 function AdminContentEditor(props: {
   teams: Team[];
+  activeRound: RoundRecord | null;
   updateTeamContent: (teamId: string, patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>) => void;
+  updateRoundContent: (
+    roundId: string,
+    patch: Partial<Pick<RoundRecord, "title" | "prompt" | "challenge" | "instructions" | "scoring_guide" | "twist">>
+  ) => void;
 }) {
   return (
     <div className="game-card admin-editor">
       <div>
         <p className="section-kicker">Content editor</p>
-        <h3>Teams and media keys</h3>
+        <h3>Live content</h3>
         <p className="muted-text">
-          Edit the names and animals used for join cards, scoreboards, and winner or loser media matching.
+          Edit the active round and team labels without touching code.
         </p>
       </div>
+
+      {props.activeRound ? (
+        <AdminRoundEditorRow
+          key={props.activeRound.id}
+          round={props.activeRound}
+          updateRoundContent={props.updateRoundContent}
+        />
+      ) : (
+        <div className="admin-empty-round">
+          <strong>No active round yet</strong>
+          <span>Start a round, then edit its title, prompt, and challenge here.</span>
+        </div>
+      )}
 
       <div className="admin-editor-stack">
         {props.teams.map((team) => (
@@ -1491,6 +1543,50 @@ function AdminTeamEditorRow(props: {
           }
         }}
       />
+    </div>
+  );
+}
+
+function AdminRoundEditorRow(props: {
+  round: RoundRecord;
+  updateRoundContent: (
+    roundId: string,
+    patch: Partial<Pick<RoundRecord, "title" | "prompt" | "challenge" | "instructions" | "scoring_guide" | "twist">>
+  ) => void;
+}) {
+  const [title, setTitle] = useState(props.round.title);
+  const [prompt, setPrompt] = useState(props.round.prompt);
+  const [challenge, setChallenge] = useState(props.round.challenge);
+
+  return (
+    <div className="admin-round-editor">
+      <input
+        aria-label="Round title"
+        value={title}
+        onChange={(event) => setTitle(event.target.value)}
+      />
+      <textarea
+        aria-label="Round prompt"
+        value={prompt}
+        onChange={(event) => setPrompt(event.target.value)}
+      />
+      <textarea
+        aria-label="Round challenge"
+        value={challenge}
+        onChange={(event) => setChallenge(event.target.value)}
+      />
+      <button
+        className="ghost-btn"
+        onClick={() =>
+          props.updateRoundContent(props.round.id, {
+            title: title.trim() || props.round.title,
+            prompt: prompt.trim() || props.round.prompt,
+            challenge: challenge.trim() || props.round.challenge,
+          })
+        }
+      >
+        Save round content
+      </button>
     </div>
   );
 }
@@ -1551,8 +1647,8 @@ function LeaderScreen(props: {
             className="waiting-avatar"
           />
           <Gamepad2 size={40} />
-          <h2>Waiting room</h2>
-          <p>You joined as {props.leaderTeam.name}. Host will start soon.</p>
+          <h2>You are live</h2>
+          <p>You joined as {props.leaderTeam.name}. Keep this screen open for votes and prompts.</p>
         </div>
       )}
 
@@ -1692,8 +1788,8 @@ function EmptyHostState() {
   return (
     <div className="empty-state">
       <Sparkles size={42} />
-      <h2>Ready to launch the room</h2>
-      <p>Pick a round type or use random round when everybody is in.</p>
+      <h2>Live room open</h2>
+      <p>Pick a round type or use random round whenever you are ready.</p>
     </div>
   );
 }
