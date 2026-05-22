@@ -22,6 +22,51 @@ const votingPrompts = [
   "Which team has been the loudest? Time to back it up.",
 ];
 
+const votingChallenges = [
+  "The most-voted team enters a 1v1 showdown against a rival picked by the host.",
+  "The most-voted team faces the current leaderboard leader in a pressure duel.",
+  "The most-voted team must nominate one rival and beat them in a fast challenge.",
+  "The most-voted team gets 30 seconds to defend themselves before the host calls the matchup.",
+  "The most-voted team plays a sudden-death round. Winner earns points, loser takes a penalty.",
+  "The most-voted team steps into the spotlight and the host chooses their exact task live.",
+];
+
+const allPlayPrompts = [
+  "This round runs across the whole room.",
+  "Everyone is active. No hiding this round.",
+  "All teams play at the same time.",
+  "Full-room chaos. Host judges the cleanest execution.",
+];
+
+const quizBurstPrompts = [
+  "Two teams enter. One answer swings it.",
+  "Fastest correct answer takes control.",
+  "Hands up, brains on, no hesitation.",
+  "One question can flip the scoreboard.",
+];
+
+const bibleSpeedPrompts = [
+  "Find it. Shout it. Beat the team across from you.",
+  "Fast hands win this one.",
+  "Open the Bible and move quickly.",
+  "The first clean read gets the edge.",
+];
+
+const danceBattlePrompts = [
+  "Energy check. Pick your showdown.",
+  "The room decides who brought the fire.",
+  "Confidence, creativity, and timing matter.",
+  "Send your boldest mover forward.",
+];
+
+const finalChallenges = [
+  "Run one last dramatic set of 1v1 or 2v2 showdowns with doubled scoring. Make it count.",
+  "Every team gets one final moment. Host scores big swings only.",
+  "The top two teams face off, then the rest fight for placement points.",
+  "One final all-play challenge decides the scoreboard. Scores are doubled.",
+  "Captains step forward for a final pressure test. Every score action counts double.",
+];
+
 // ---------------------------------------------------------------------------
 // TWISTS
 // ---------------------------------------------------------------------------
@@ -239,8 +284,7 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
         type,
         title: "Pressure Duel Vote",
         prompt: pickRandom(votingPrompts),
-        challenge:
-          "The most-voted team enters a 1v1 showdown against a rival picked by the host or by score position.",
+        challenge: pickRandom(votingChallenges),
         instructions:
           "Leaders vote from their phones. Once locked, reveal the pressure team and match them into a direct duel.",
         scoringGuide:
@@ -253,7 +297,7 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
       return {
         type,
         title: "Tag-Team Clash",
-        prompt: "This round runs as 2v2 matchups across the whole room.",
+        prompt: pickRandom(allPlayPrompts),
         challenge: pickRandom(allPlayChallenges),
         instructions:
           "No voting. Pair teams into two 2v2 battles or run one featured 2v2 showdown at a time.",
@@ -266,7 +310,7 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
       return {
         type,
         title: "Quiz Burst Face-Off",
-        prompt: "Two teams enter. One answer swings it.",
+        prompt: pickRandom(quizBurstPrompts),
         challenge: `1v1 quick-fire question: ${pickRandom(bibleQuestions)}`,
         instructions:
           "Pick two teams to face off first, then rotate challengers or keep the winner on the floor.",
@@ -280,7 +324,7 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
       return {
         type,
         title: "Bible Speed Face-Off",
-        prompt: "Find it. Shout it. Beat the team across from you.",
+        prompt: pickRandom(bibleSpeedPrompts),
         challenge: pickRandom(bibleSpeedChallenges),
         instructions:
           "Host gives the reference, starts the timer, and calls one matchup at a time or two duos side by side.",
@@ -293,7 +337,7 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
       return {
         type,
         title: "Dance Battle Bracket",
-        prompt: "Energy check. Pick your 1v1 or 2v2 showdown.",
+        prompt: pickRandom(danceBattlePrompts),
         challenge: pickRandom(danceBattleChallenges),
         instructions:
           "No voting needed. Let the host call the bracket and score confidence, creativity, and crowd energy.",
@@ -321,8 +365,7 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
         type,
         title: "Final Round",
         prompt: "Everything counts double now. This is where legends are made.",
-        challenge:
-          "Run one last dramatic set of 1v1 or 2v2 showdowns with doubled scoring. Make it count.",
+        challenge: pickRandom(finalChallenges),
         instructions:
           "Host launches the final round, chooses the final matchups, scores every team, then reveals the winner.",
         scoringGuide:
