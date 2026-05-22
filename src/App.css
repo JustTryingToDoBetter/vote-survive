@@ -509,6 +509,22 @@ textarea {
   background: #f8fafc;
 }
 
+.round-blocked-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  border-radius: 18px;
+  padding: 12px;
+  background: #fff7ed;
+}
+
+.round-blocked-row p {
+  margin: 0;
+}
+
 .timer-control-panel .section-kicker {
   margin-bottom: 8px;
 }

@@ -1281,9 +1281,15 @@ function HostScreen(props: {
               </div>
             </div>
             {!canStartRound && (
-              <p className="muted-text">
-                Finish or complete the current round before starting another one.
-              </p>
+              <div className="round-blocked-row">
+                <p className="muted-text">
+                  A round is still active. Close it to choose the next round.
+                </p>
+                <button className="ghost-btn" onClick={props.completeRound}>
+                  <Check size={18} />
+                  Close current round
+                </button>
+              </div>
             )}
             <TimerControls
               timerDuration={props.timerDuration}
