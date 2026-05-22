@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
+import eagleWinnerVideo from "./assets/winners/eagle.mp4";
+import lionWinnerVideo from "./assets/winners/lion.mp4";
+import sheepWinnerVideo from "./assets/winners/sheep.mp4";
+import tigerWinnerVideo from "./assets/winners/tiger.mp4";
 import {
   Check,
   Crown,
@@ -48,6 +52,16 @@ const SCORE_PRESETS = [
   { label: "+10 Winner", delta: 10, reason: "Winner" },
   { label: "-3 Penalty", delta: -3, reason: "Penalty" },
 ] as const;
+
+const winnerVideoByAnimal: Record<string, string> = {
+  lions: lionWinnerVideo,
+  lion: lionWinnerVideo,
+  sheep: sheepWinnerVideo,
+  tiger: tigerWinnerVideo,
+  tigers: tigerWinnerVideo,
+  eagle: eagleWinnerVideo,
+  eagles: eagleWinnerVideo,
+};
 
 function generateCode(length = 5) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -113,6 +127,18 @@ function normalizeTeam(team: Team, fallbackIndex: number): Team {
 function getJoinUrl(roomCode: string) {
   if (typeof window === "undefined") return `/join?room=${roomCode}`;
   return `${window.location.origin}/join?room=${roomCode}`;
+}
+
+function getWinnerVideo(team: Team) {
+  const keys = [team.animal, team.name]
+    .filter(Boolean)
+    .map((value) => String(value).trim().toLowerCase());
+
+  for (const key of keys) {
+    if (winnerVideoByAnimal[key]) return winnerVideoByAnimal[key];
+  }
+
+  return null;
 }
 
 export default function App() {
@@ -186,6 +212,16 @@ export default function App() {
     if (!activeRound?.target_team_id) return null;
     return teams.find((team) => team.id === activeRound.target_team_id) ?? null;
   }, [activeRound, teams]);
+
+  const rivalTeam = useMemo(() => {
+    if (!targetTeam) return null;
+
+    return (
+      sortedVoteCounts.find((entry) => entry.team.id !== targetTeam.id)?.team ??
+      sortedTeams.find((team) => team.id !== targetTeam.id) ??
+      null
+    );
+  }, [sortedTeams, sortedVoteCounts, targetTeam]);
 
   const leaderHasVoted = useMemo(() => {
     if (!leaderTeam || !activeRound) return false;
@@ -655,6 +691,7 @@ export default function App() {
           scoreEvents={scoreEvents}
           voteCounts={voteCounts}
           targetTeam={targetTeam}
+          rivalTeam={rivalTeam}
           secondsLeft={secondsLeft}
           totalVotes={totalVotes}
           loadError={loadError}
@@ -925,6 +962,7 @@ function HostScreen(props: {
   scoreEvents: ScoreEvent[];
   voteCounts: { team: Team; count: number }[];
   targetTeam: Team | null;
+  rivalTeam: Team | null;
   secondsLeft: number;
   totalVotes: number;
   loadError: string | null;
@@ -1067,6 +1105,7 @@ function HostScreen(props: {
               <ChallengeRevealCard
                 round={props.activeRound}
                 targetTeam={props.targetTeam}
+                rivalTeam={props.rivalTeam}
               />
             )}
           </div>
@@ -1469,6 +1508,7 @@ function AnimatedVoteBar(props: {
 function ChallengeRevealCard(props: {
   round: RoundRecord;
   targetTeam: Team | null;
+  rivalTeam: Team | null;
 }) {
   return (
     <motion.div
@@ -1499,6 +1539,13 @@ function ChallengeRevealCard(props: {
         <p className="muted-on-dark">
           This round is all-play, so every team is in the spotlight.
         </p>
+      )}
+      {props.targetTeam && props.rivalTeam && (
+        <div className="matchup-strip">
+          <span>{props.targetTeam.name}</span>
+          <b>vs</b>
+          <span>{props.rivalTeam.name}</span>
+        </div>
       )}
       <h3>{props.round.challenge}</h3>
       <p className="muted-on-dark">{props.round.scoring_guide}</p>
@@ -1606,6 +1653,23 @@ function GameHistoryPanel(props: {
   scoreEvents: ScoreEvent[];
   teams: Team[];
 }) {
+  function getRoundWinners(roundId: string) {
+    const totals = new Map<string, number>();
+
+    props.scoreEvents
+      .filter((event) => event.round_id === roundId && !event.undone_at)
+      .forEach((event) => {
+        totals.set(event.team_id, (totals.get(event.team_id) ?? 0) + event.delta);
+      });
+
+    const topScore = Math.max(0, ...totals.values());
+    if (topScore <= 0) return [];
+
+    return [...totals.entries()]
+      .filter(([, total]) => total === topScore)
+      .map(([teamId]) => props.teams.find((team) => team.id === teamId)?.name ?? "Team");
+  }
+
   return (
     <div className="history-stack">
       {props.rounds.length === 0 && (
@@ -1616,6 +1680,7 @@ function GameHistoryPanel(props: {
         const events = props.scoreEvents.filter((event) => event.round_id === round.id);
         const pressureTeam =
           props.teams.find((team) => team.id === round.target_team_id)?.name ?? "All teams";
+        const winners = getRoundWinners(round.id);
 
         return (
           <article className="history-card" key={round.id}>
@@ -1626,6 +1691,11 @@ function GameHistoryPanel(props: {
               <span>{pressureTeam}</span>
             </div>
             <p>{round.challenge}</p>
+            {winners.length > 0 && (
+              <p className="history-winner-line">
+                Winner{winners.length > 1 ? "s" : ""}: {winners.join(" & ")}
+              </p>
+            )}
             <div className="history-events">
               {events.slice(0, 4).map((event) => {
                 const teamName =
@@ -1651,6 +1721,8 @@ function WinnerReveal(props: {
   maxScore: number;
   reducedMotion: boolean;
 }) {
+  const winnerVideo = getWinnerVideo(props.winner);
+
   return (
     <motion.section
       className="winner-panel"
@@ -1673,6 +1745,18 @@ function WinnerReveal(props: {
           </p>
         </div>
       </div>
+      {winnerVideo && (
+        <div className="winner-video-wrap">
+          <video
+            className="winner-video"
+            src={winnerVideo}
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        </div>
+      )}
       <AnimatedLeaderboard teams={props.teams} maxScore={props.maxScore} />
     </motion.section>
   );

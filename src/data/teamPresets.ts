@@ -25,7 +25,7 @@ export const DEFAULT_TEAM_PRESETS: TeamPreset[] = [
     tone: "Calm and faithful",
   },
   {
-    name: "Rapha",
+    name: "Stripe Warriors",
     animal: "Tigers",
     avatarEmoji: "🐯",
     avatarImage: "/teams/rapha-tiger.png",
@@ -33,7 +33,7 @@ export const DEFAULT_TEAM_PRESETS: TeamPreset[] = [
     tone: "Fierce and energetic",
   },
   {
-    name: "Purple",
+    name: "S",
     animal: "Cows",
     avatarEmoji: "🐄",
     avatarImage: "/teams/purple-cow.png",

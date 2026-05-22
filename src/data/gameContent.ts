@@ -1,10 +1,10 @@
 import type { RoundDefinition, RoundType } from "../lib/types";
 
 const votingPrompts = [
-  "Which team would lose a wilderness survival challenge first?",
-  "Which team would fold first in a pressure-cooker trivia moment?",
-  "Which team talks big but might wobble under spotlight pressure?",
-  "Which team should be sent into the pressure zone tonight?",
+  "Which team should be thrown into a 1v1 showdown tonight?",
+  "Which team would crack first in a head-to-head pressure battle?",
+  "Which team talks big but might wobble in a direct face-off?",
+  "Which team should step into the pressure duel right now?",
 ];
 
 const twists = [
@@ -15,9 +15,9 @@ const twists = [
 ];
 
 const allPlayChallenges = [
-  "Every team has 25 seconds to invent a chant from their team animal.",
-  "Each team must build a one-freeze Bible scene with only body poses.",
-  "Teams have 30 seconds to create a team slogan and shout it together.",
+  "Split the room into 2v2 lanes. Each pair has 25 seconds to invent a chant from their team animal.",
+  "Run back-to-back 2v2 freeze battles. Each duo builds a Bible scene using only body poses.",
+  "Create two 2v2 matchups. Each pair has 30 seconds to make a slogan and deliver it loud.",
 ];
 
 const bibleQuestions = [
@@ -44,72 +44,74 @@ export const roundTypeLabels: Record<RoundType, string> = {
 export const roundTemplates: Record<RoundType, () => RoundDefinition> = {
   voting: () => ({
     type: "voting",
-    title: "Pressure Vote",
+    title: "Pressure Duel Vote",
     prompt: pickRandom(votingPrompts),
     challenge:
-      "The most-voted team enters the pressure spotlight, but every team still competes for points.",
+      "The most-voted team enters a 1v1 showdown against a rival picked by the host or by score position.",
     instructions:
-      "Leaders vote from their phones. Once locked, the host reveals the pressure team and runs the challenge.",
+      "Leaders vote from their phones. Once locked, reveal the pressure team and match them into a direct duel.",
     scoringGuide:
-      "Score every team after the challenge. Use presets for speed or add a custom bonus/penalty.",
+      "Use winner and runner-up scoring for the duel, then give participation or bonus points to the rest.",
     twist: pickRandom(twists),
     requiresVoting: true,
   }),
   all_play: () => ({
     type: "all_play",
-    title: "Everybody In",
-    prompt: "All teams must jump in for this one.",
+    title: "Tag-Team Clash",
+    prompt: "This round runs as 2v2 matchups.",
     challenge: pickRandom(allPlayChallenges),
     instructions:
-      "No voting. The host launches the round and all teams compete at once.",
+      "No voting. Pair teams into two 2v2 battles or run one featured 2v2 showdown at a time.",
     scoringGuide:
-      "Award all teams. Great for participation, runner-up, and winner presets.",
+      "Score the winning duo high, the other duo as runner-up or effort, then add custom bonuses if needed.",
     requiresVoting: false,
   }),
   quiz_burst: () => ({
     type: "quiz_burst",
-    title: "Quiz Burst",
-    prompt: "Quick answer pressure is on.",
-    challenge: `Question: ${pickRandom(bibleQuestions)}`,
+    title: "Quiz Burst Face-Off",
+    prompt: "Two teams enter. One answer swings it.",
+    challenge: `1v1 quick-fire question: ${pickRandom(bibleQuestions)}`,
     instructions:
-      "Host reads the question. Teams answer fast. Use scoring buttons as soon as answers land.",
-    scoringGuide: "Fastest correct answer wins. Others can still receive effort points.",
+      "Pick two teams to face off first, then rotate challengers or keep the winner on the floor.",
+    scoringGuide:
+      "Fastest correct answer wins the duel. Score the winner, runner-up, and any teams waiting for a follow-up round.",
     twist: pickRandom(twists),
     requiresVoting: false,
   }),
   bible_speed: () => ({
     type: "bible_speed",
-    title: "Bible Speed Round",
-    prompt: "Find it. Shout it. Own it.",
+    title: "Bible Speed Face-Off",
+    prompt: "Find it. Shout it. Beat the team across from you.",
     challenge:
-      "Teams race to find a Bible passage and read the key verse out loud.",
+      "Run 1v1 or 2v2 Bible look-up races. Teams sprint to find a passage and read the key verse first.",
     instructions:
-      "Host gives the reference and starts the timer. All teams compete together.",
+      "Host gives the reference, starts the timer, and calls one matchup at a time or two duos side by side.",
     scoringGuide:
-      "Use +10 for the fastest, +7 for close second, and +2 or +5 for the rest.",
+      "Use winner, runner-up, and effort scoring based on each matchup result.",
     requiresVoting: false,
   }),
   dance_battle: () => ({
     type: "dance_battle",
-    title: "Dance Battle",
-    prompt: "Energy check. Who owns the room?",
+    title: "Dance Battle Bracket",
+    prompt: "Energy check. Pick your 1v1 or 2v2 showdown.",
     challenge:
-      "Teams get 20 seconds to show their wildest celebration move when the music hits.",
+      "Run a 1v1 captain battle or a 2v2 crew showdown when the music drops.",
     instructions:
-      "No voting needed. Let each team perform and score for confidence, creativity, and crowd energy.",
-    scoringGuide: "Best performance gets winner points. Crowd favorites can get effort bonuses too.",
+      "No voting needed. Let the host call the bracket and score confidence, creativity, and crowd energy.",
+    scoringGuide:
+      "Winning act gets top points, losing act gets runner-up or effort points, and crowd favorites can earn a bonus.",
     requiresVoting: false,
   }),
   steal: () => ({
     type: "steal",
-    title: "Steal Round",
-    prompt: "One team can snatch momentum.",
+    title: "Steal Duel",
+    prompt: "One 1v1 battle can swing the room.",
     challenge:
-      "The pressure team faces a rival. If they win, they steal points. The host still scores every team.",
+      "The pressure team faces a rival in a 1v1 duel. If they win, they steal momentum and maybe extra points.",
     instructions:
-      "Use voting first to pick the pressure team, then let them choose a rival.",
+      "Use voting first to pick the pressure team, then match them against one rival for the steal attempt.",
     scoringGuide:
-      "Award regular points, then use custom scoring if you want to reflect a steal bonus.",
+      "Award normal winner and runner-up points, then use a custom score if you want to add the steal bonus.",
     twist: "Twist: The chosen rival may answer first.",
     requiresVoting: true,
   }),
@@ -118,9 +120,9 @@ export const roundTemplates: Record<RoundType, () => RoundDefinition> = {
     title: "Final Round",
     prompt: "Everything counts double now.",
     challenge:
-      "All teams compete in one last dramatic showdown with doubled scoring.",
+      "Run one last dramatic set of 1v1 or 2v2 showdowns with doubled scoring.",
     instructions:
-      "Host launches the final round. No voting. Score every team, then reveal the winner.",
+      "Host launches the final round, chooses the final matchups, scores every team, then reveals the winner.",
     scoringGuide:
       "Every score action is doubled automatically in the final round.",
     twist: "Final twist: Big moments swing the leaderboard fast.",
