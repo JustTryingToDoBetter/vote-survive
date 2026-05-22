@@ -130,6 +130,24 @@ function getRoundTimerSeconds(round: RoundRecord | null) {
   return round?.timer_seconds ?? DEFAULT_ROUND_SECONDS;
 }
 
+function toLegacyRoundPayload(payload: {
+  room_id: string;
+  title: string;
+  prompt: string;
+  question: string;
+  challenge: string;
+  status: RoundStatus;
+  target_team_id?: string | null;
+}) {
+  return {
+    room_id: payload.room_id,
+    question: payload.question || payload.prompt || payload.title,
+    challenge: payload.challenge,
+    status: payload.status,
+    target_team_id: payload.target_team_id ?? null,
+  };
+}
+
 function normalizeTeam(team: Team, fallbackIndex: number): Team {
   const preset = DEFAULT_TEAMS[fallbackIndex % DEFAULT_TEAMS.length];
 
@@ -552,13 +570,18 @@ export default function App() {
 
       const { error } = await supabase.from("rounds").insert(roundPayload);
 
-      if (error && error.message.toLowerCase().includes("timer_seconds")) {
+      if (error) {
         const legacyPayload: Partial<typeof roundPayload> = { ...roundPayload };
         delete legacyPayload.timer_seconds;
         const { error: retryError } = await supabase.from("rounds").insert(legacyPayload);
-        if (retryError) throw retryError;
-      } else if (error) {
-        throw error;
+
+        if (retryError) {
+          const { error: minimalRetryError } = await supabase
+            .from("rounds")
+            .insert(toLegacyRoundPayload(roundPayload));
+
+          if (minimalRetryError) throw minimalRetryError;
+        }
       }
 
       await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
