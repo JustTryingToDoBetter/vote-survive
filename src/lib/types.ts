@@ -91,6 +91,7 @@ export type ScoreEvent = {
   reason: string;
   created_at: string;
   undone_at?: string | null;
+  dedupe_key?: string | null;
 };
 
 export type RoundRecord = {

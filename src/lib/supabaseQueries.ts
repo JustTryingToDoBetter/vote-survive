@@ -12,7 +12,7 @@ export const voteColumns = "id,round_id,voter_team_id,target_team_id";
 export const answerColumns =
   "id,round_id,team_id,question_index,answer,is_correct,submitted_at";
 export const scoreColumns =
-  "id,room_id,round_id,team_id,delta,reason,created_at,undone_at";
+  "id,room_id,round_id,team_id,delta,reason,created_at,undone_at,dedupe_key";
 
 export function mapAnswerSubmission(row: Record<string, unknown>): AnswerSubmission {
   return {

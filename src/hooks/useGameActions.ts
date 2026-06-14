@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { buildRoundDefinition } from "../data/gameContent";
 import {
   HOST_SESSION_KEY,
@@ -15,7 +15,6 @@ import {
   fetchTeamByLeaderCode,
   roomColumns,
   roundColumns,
-  scoreColumns,
   teamColumns,
 } from "../lib/supabaseQueries";
 import type { SoundName } from "../lib/sound";
@@ -37,6 +36,24 @@ type SoundEffects = {
 
 function votesForLeader(votes: VoteRow[], leaderTeamId: string) {
   return votes.find((vote) => vote.voter_team_id === leaderTeamId) ?? null;
+}
+
+type ScoreRpcRow = ScoreEvent & {
+  new_score: number;
+};
+
+function toScoreEvent(row: ScoreRpcRow): ScoreEvent {
+  return {
+    id: row.id,
+    room_id: row.room_id,
+    round_id: row.round_id,
+    team_id: row.team_id,
+    delta: row.delta,
+    reason: row.reason,
+    created_at: row.created_at,
+    undone_at: row.undone_at,
+    dedupe_key: row.dedupe_key,
+  };
 }
 
 type UseGameActionsArgs = {
@@ -105,6 +122,7 @@ export function useGameActions({
   const [scoringTeamIds, setScoringTeamIds] = useState<Record<string, boolean>>({});
   const [pendingVoteTargetId, setPendingVoteTargetId] = useState<string | null>(null);
   const [pendingAnswerKey, setPendingAnswerKey] = useState<string | null>(null);
+  const scoringLocksRef = useRef<Record<string, boolean>>({});
 
   async function createRoom() {
     setIsLoading(true);
@@ -461,7 +479,7 @@ export function useGameActions({
 
   async function applyScore(teamId: string, delta: number, reason: string) {
     if (!room) return;
-    if (scoringTeamIds[teamId]) return;
+    if (scoringLocksRef.current[teamId]) return;
 
     const team = teams.find((entry) => entry.id === teamId);
     if (!team) return;
@@ -469,47 +487,46 @@ export function useGameActions({
     const multiplier = activeRound?.round_type === "final_double" ? 2 : 1;
     const finalDelta = delta * multiplier;
 
+    scoringLocksRef.current[teamId] = true;
     setScoringTeamIds((current) => ({ ...current, [teamId]: true }));
 
     try {
-      const { error: updateError } = await supabase
-        .from("teams")
-        .update({ score: team.score + finalDelta })
-        .eq("id", teamId);
+      const dedupeKey = [
+        "score",
+        room.id,
+        activeRound?.id ?? "room",
+        teamId,
+        finalDelta,
+        reason,
+        crypto.randomUUID(),
+      ].join(":");
 
-      if (updateError) {
-        setLoadError(updateError.message);
-        return;
-      }
-
-      setTeams((current) =>
-        current.map((entry) =>
-          entry.id === teamId ? { ...entry, score: entry.score + finalDelta } : entry
-        )
-      );
-
-      const { data: scoreEvent, error: eventError } = await supabase
-        .from("score_events")
-        .insert({
-          room_id: room.id,
-          round_id: activeRound?.id ?? null,
-          team_id: teamId,
-          delta: finalDelta,
-          reason,
+      const { data, error } = await supabase
+        .rpc("apply_score_event", {
+          p_room_id: room.id,
+          p_team_id: teamId,
+          p_delta: finalDelta,
+          p_reason: reason,
+          p_round_id: activeRound?.id ?? null,
+          p_dedupe_key: dedupeKey,
         })
-        .select(scoreColumns)
         .single();
 
-      if (eventError) {
-        setLoadError(eventError.message);
+      if (error || !data) {
+        setLoadError(error?.message ?? "Unable to score team.");
         return;
       }
 
-      if (scoreEvent) {
-        setScoreEvents((current) => [scoreEvent as ScoreEvent, ...current]);
-      }
+      const scoreRow = data as ScoreRpcRow;
+      setTeams((current) =>
+        current.map((entry) =>
+          entry.id === teamId ? { ...entry, score: scoreRow.new_score } : entry
+        )
+      );
+      setScoreEvents((current) => [toScoreEvent(scoreRow), ...current]);
       sound.play("score");
     } finally {
+      scoringLocksRef.current[teamId] = false;
       setScoringTeamIds((current) => ({ ...current, [teamId]: false }));
     }
   }
@@ -520,36 +537,26 @@ export function useGameActions({
     const team = teams.find((entry) => entry.id === latestScoreEvent.team_id);
     if (!team) return;
 
-    const { error: teamError } = await supabase
-      .from("teams")
-      .update({ score: team.score - latestScoreEvent.delta })
-      .eq("id", team.id);
+    const { data, error } = await supabase
+      .rpc("undo_score_event", {
+        p_score_event_id: latestScoreEvent.id,
+      })
+      .single();
 
-    if (teamError) {
-      setLoadError(teamError.message);
+    if (error || !data) {
+      setLoadError(error?.message ?? "Unable to undo score.");
       return;
     }
 
-    const { error: eventError } = await supabase
-      .from("score_events")
-      .update({ undone_at: new Date().toISOString() })
-      .eq("id", latestScoreEvent.id);
-
-    if (eventError) {
-      setLoadError(eventError.message);
-      return;
-    }
-
+    const scoreRow = data as ScoreRpcRow;
     setTeams((current) =>
       current.map((entry) =>
-        entry.id === team.id ? { ...entry, score: entry.score - latestScoreEvent.delta } : entry
+        entry.id === team.id ? { ...entry, score: scoreRow.new_score } : entry
       )
     );
     setScoreEvents((current) =>
       current.map((event) =>
-        event.id === latestScoreEvent.id
-          ? { ...event, undone_at: new Date().toISOString() }
-          : event
+        event.id === latestScoreEvent.id ? toScoreEvent(scoreRow) : event
       )
     );
   }
