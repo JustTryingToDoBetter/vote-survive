@@ -1,73 +1,79 @@
-# React + TypeScript + Vite
+# Vote Survive
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Vote Survive is a live youth-room game show app for team nights. A host runs rounds, team leaders vote or answer from their phones, and a projector screen shows the current stage, pressure team, scores, and final reveal.
 
-Currently, two official plugins are available:
+## How The Game Works
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. The host creates a room and gets a room code plus leader codes.
+2. Team leaders join on their phones with the room code and their team code.
+3. The host starts rounds such as voting, all-play, quiz burst, Bible speed, dance battle, steal, and final double points.
+4. Leaders vote or answer where needed.
+5. The host locks votes, reveals challenges, scores teams, and completes the round.
+6. The final double-points round leads into a dramatic winner reveal.
 
-## React Compiler
+## Host Flow
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Create a room from the home screen.
+- Share the room code and team codes.
+- Open the game screen or leaderboard on a projector.
+- Use the run-of-show flow: Lobby, Round Reveal, Voting / Task Live, Locked, Scoring, Leaderboard, Final Reveal.
+- Use one primary action at a time: start round, lock votes, complete round, start next round, or reveal/reset final results.
+- Score teams with presets or custom values. Final double rounds automatically double scoring.
 
-## Expanding the ESLint configuration
+## Leader Flow
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- Join from `/join` using the room code and team code.
+- See a clear team identity header.
+- During voting rounds, vote for another team and see the selected target.
+- During answer rounds, submit an answer and see the locked-in choice.
+- Wait for the host while scoring or between rounds.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Projector Flow
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- Open `/game?room=ROOMCODE` for the live stage.
+- Open `/leaderboard?room=ROOMCODE` for a score-first view.
+- The projector stage shows waiting, voting open, votes locked, challenge revealed, scoring, and winner reveal states.
+- Leaderboard rows and reveal moments animate with Framer Motion and CSS.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Local Setup
+
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The dev server runs with Vite. Create a `.env` file with Supabase credentials before launching the app.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Environment Variables
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
+
+## Scripts
+
+```bash
+npm run dev      # start local dev server
+npm run build    # type-check and build production assets
+npm run lint     # run ESLint
+npm run preview  # preview production build
+```
+
+## Current V1 Features
+
+- Supabase-backed rooms, teams, rounds, votes, answer submissions, and score events.
+- Host run-of-show gameflow.
+- Phone-first leader voting and answer flow.
+- Projector stage and leaderboard routes.
+- Animated leaderboard and final reveal.
+- Safer scoring with pending guards, latest score feedback, undo last score, and final double-points messaging.
+- Built-in round content for voting, all-play, quiz burst, Bible speed, dance battle, steal, and final double.
+
+## Roadmap
+
+- Stronger host controls for custom round playlists.
+- Better QR display and room handoff.
+- More scoring audit tools.
+- Post-game summary export.
+- Optional richer sound cues and stage themes.
