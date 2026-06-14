@@ -9,6 +9,7 @@ type LeaderVotePanelProps = {
   leaderTeam: Team;
   selectedTarget: Team | null;
   submitVote: (targetTeamId: string) => void;
+  pendingTargetId: string | null;
 };
 
 export function LeaderVotePanel({
@@ -17,6 +18,7 @@ export function LeaderVotePanel({
   leaderTeam,
   selectedTarget,
   submitVote,
+  pendingTargetId,
 }: LeaderVotePanelProps) {
   return (
     <>
@@ -25,6 +27,7 @@ export function LeaderVotePanel({
           .filter((team) => team.id !== leaderTeam.id)
           .map((team) => {
             const selected = selectedTarget?.id === team.id;
+            const pending = pendingTargetId === team.id;
 
             return (
               <motion.button
@@ -32,6 +35,7 @@ export function LeaderVotePanel({
                 className={`vote-tile ${selected ? "is-selected" : ""}`}
                 style={{ "--team-color": team.color ?? "#14b8a6" } as React.CSSProperties}
                 onClick={() => submitVote(team.id)}
+                disabled={Boolean(pendingTargetId)}
                 whileTap={{ scale: 0.97 }}
               >
                 <TeamAvatar
@@ -42,6 +46,7 @@ export function LeaderVotePanel({
                 <strong>{team.name}</strong>
                 <span>{team.animal ?? "Team"}</span>
                 {selected && <b>Selected</b>}
+                {pending && <b>Sending...</b>}
               </motion.button>
             );
           })}

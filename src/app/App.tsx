@@ -12,12 +12,21 @@ import {
 import { HomeScreen } from "../features/home/HomeScreen";
 import { HostScreen } from "../features/host/HostScreen";
 import { LeaderScreen } from "../features/leader/LeaderScreen";
+import { getAnswerForTeam, isRapidQuizRound } from "../features/quiz/quizEngine";
 import { AnimatedLeaderboard } from "../features/shared/AnimatedLeaderboard";
 import { TimerRing } from "../features/shared/TimerRing";
 import { useGameActions } from "../hooks/useGameActions";
+import { useQuizActions } from "../hooks/useQuizActions";
 import { useRoomSession } from "../hooks/useRoomSession";
 import { useSoundEffects } from "../hooks/useSoundEffects";
-import type { AppMode, Room, RoundRecord, RoundType, Team } from "../lib/types";
+import type {
+  AnswerSubmission,
+  AppMode,
+  Room,
+  RoundRecord,
+  RoundType,
+  Team,
+} from "../lib/types";
 import "../App.css";
 
 export default function App() {
@@ -102,6 +111,13 @@ export default function App() {
 
   const leaderAnswer = useMemo(() => {
     if (!session.leaderTeam || !session.activeRound) return null;
+    if (isRapidQuizRound(session.activeRound)) {
+      return getAnswerForTeam(
+        session.answerSubmissions,
+        session.activeRound,
+        session.leaderTeam.id
+      );
+    }
     return (
       session.answerSubmissions.find(
         (submission) => submission.team_id === session.leaderTeam?.id
@@ -142,6 +158,8 @@ export default function App() {
     teams: session.teams,
     rounds: session.rounds,
     activeRound: session.activeRound,
+    votes: session.votes,
+    answerSubmissions: session.answerSubmissions,
     leaderTeam: session.leaderTeam,
     sortedVoteCounts,
     latestScoreEvent,
@@ -165,6 +183,15 @@ export default function App() {
     setLoadError: session.setLoadError,
     refreshRoomData: session.refreshRoomData,
     queueRoomRefresh: session.queueRoomRefresh,
+  });
+
+  const quizActions = useQuizActions({
+    activeRound: session.activeRound,
+    answerSubmissions: session.answerSubmissions,
+    setRounds: session.setRounds,
+    setActiveRound: session.setActiveRound,
+    setLoadError: session.setLoadError,
+    applyScore: actions.applyScore,
   });
 
   useEffect(() => {
@@ -218,6 +245,7 @@ export default function App() {
           sortedTeams={sortedTeams}
           activeRound={session.activeRound}
           answerSubmissions={sortedAnswerSubmissions}
+          votes={session.votes}
           voteCounts={voteCounts}
           targetTeam={targetTeam}
           rivalTeam={rivalTeam}
@@ -244,6 +272,7 @@ export default function App() {
           setCustomScoreInputs={setCustomScoreInputs}
           revealWinner={actions.revealWinner}
           resetGame={actions.resetGame}
+          quizActions={quizActions}
           updateTeamContent={actions.updateTeamContent}
           updateRoundContent={actions.updateRoundContent}
           showWinner={showWinner}
@@ -265,6 +294,8 @@ export default function App() {
           submitVote={actions.submitVote}
           submitAnswer={actions.submitAnswer}
           leaderAnswer={leaderAnswer}
+          pendingVoteTargetId={actions.pendingVoteTargetId}
+          pendingAnswerKey={actions.pendingAnswerKey}
         />
       )}
 
@@ -278,6 +309,7 @@ export default function App() {
           rivalTeam={rivalTeam}
           secondsLeft={secondsLeft}
           totalVotes={totalVotes}
+          answerSubmissions={sortedAnswerSubmissions}
           syncState={session.syncState}
           showWinner={
             showWinner ||
@@ -350,6 +382,7 @@ function GameScreen(props: {
   rivalTeam: Team | null;
   secondsLeft: number;
   totalVotes: number;
+  answerSubmissions: AnswerSubmission[];
   syncState: SyncState;
   showWinner: boolean;
   winnerTeam: Team | null;
@@ -391,6 +424,7 @@ function GameScreen(props: {
           rivalTeam={props.rivalTeam}
           secondsLeft={props.secondsLeft}
           totalVotes={props.totalVotes}
+          answerSubmissions={props.answerSubmissions}
         />
       )}
     </motion.main>

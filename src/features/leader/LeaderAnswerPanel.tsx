@@ -5,12 +5,14 @@ type LeaderAnswerPanelProps = {
   round: RoundRecord;
   leaderAnswer: AnswerSubmission | null;
   submitAnswer: (answer: string) => void;
+  pendingAnswerKey: string | null;
 };
 
 export function LeaderAnswerPanel({
   round,
   leaderAnswer,
   submitAnswer,
+  pendingAnswerKey,
 }: LeaderAnswerPanelProps) {
   return (
     <>
@@ -20,10 +22,12 @@ export function LeaderAnswerPanel({
             key={option}
             className={`answer-option ${leaderAnswer?.answer === option ? "is-selected" : ""}`}
             onClick={() => submitAnswer(option)}
+            disabled={Boolean(pendingAnswerKey)}
             whileTap={{ scale: 0.97 }}
           >
             <strong>{option}</strong>
             {leaderAnswer?.answer === option && <span>Locked in</span>}
+            {pendingAnswerKey?.endsWith(`:${option}`) && <span>Sending...</span>}
           </motion.button>
         ))}
       </div>

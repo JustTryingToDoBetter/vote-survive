@@ -1,6 +1,13 @@
 import { roundTypeLabels } from "../data/gameContent";
 import { DEFAULT_TEAMS } from "../data/teamPresets";
-import type { RoundRecord, RoundStatus, RoundType, Team } from "../lib/types";
+import type {
+  QuestionStatus,
+  QuizQuestion,
+  RoundRecord,
+  RoundStatus,
+  RoundType,
+  Team,
+} from "../lib/types";
 
 export const HOST_SESSION_KEY = "vote-survive-host-session";
 
@@ -30,6 +37,9 @@ export function toRoundRecord(row: Record<string, unknown>): RoundRecord {
   const prompt = String(row.prompt ?? row.question ?? "");
   const title =
     String(row.title ?? "").trim() || roundTypeLabels[roundType] || "Round";
+  const questionSet = Array.isArray(row.question_set)
+    ? (row.question_set as QuizQuestion[])
+    : null;
 
   return {
     id: String(row.id),
@@ -54,6 +64,15 @@ export function toRoundRecord(row: Record<string, unknown>): RoundRecord {
       ? (row.answer_options as string[])
       : null,
     correct_answer: (row.correct_answer as string | null | undefined) ?? null,
+    question_set: questionSet,
+    current_question_index:
+      typeof row.current_question_index === "number"
+        ? row.current_question_index
+        : Number(row.current_question_index ?? 0),
+    question_status:
+      (row.question_status as QuestionStatus | null | undefined) ?? null,
+    question_started_at:
+      (row.question_started_at as string | null | undefined) ?? null,
     created_at: String(row.created_at),
   };
 }

@@ -23,6 +23,17 @@ export type RoundStatus =
   | "complete"
   | "winner";
 
+export type QuestionStatus = "waiting" | "live" | "locked" | "complete";
+
+export type QuizQuestion = {
+  id: string;
+  prompt: string;
+  options: string[];
+  correctAnswer: string;
+  timeLimitSeconds: number;
+  points: number;
+};
+
 export type Room = {
   id: string;
   code: string;
@@ -65,6 +76,7 @@ export type AnswerSubmission = {
   id: string;
   round_id: string;
   team_id: string;
+  question_index: number;
   answer: string;
   is_correct: boolean;
   submitted_at: string;
@@ -98,6 +110,10 @@ export type RoundRecord = {
   timer_seconds?: number | null;
   answer_options?: string[] | null;
   correct_answer?: string | null;
+  question_set?: QuizQuestion[] | null;
+  current_question_index?: number | null;
+  question_status?: QuestionStatus | null;
+  question_started_at?: string | null;
   created_at: string;
 };
 
@@ -113,4 +129,7 @@ export type RoundDefinition = {
   isFinal?: boolean;
   answerOptions?: string[];
   correctAnswer?: string;
+  questionSet?: QuizQuestion[];
+  currentQuestionIndex?: number;
+  questionStatus?: QuestionStatus;
 };

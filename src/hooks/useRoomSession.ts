@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  HOST_SESSION_KEY,
-  normalizeTeam,
-  toRoundRecord,
-} from "../app/appHelpers";
-import { REALTIME_DEBOUNCE_MS, LIVE_SYNC_INTERVAL_MS } from "../lib/sessionConfig";
+import { HOST_SESSION_KEY, normalizeTeam, toRoundRecord } from "../app/appHelpers";
+import { LIVE_SYNC_INTERVAL_MS, REALTIME_DEBOUNCE_MS } from "../lib/sessionConfig";
 import { supabase } from "../lib/supabase";
+import {
+  fetchAnswers,
+  fetchRoom,
+  fetchRoomByCode,
+  fetchRounds,
+  fetchScores,
+  fetchTeams,
+  fetchVotes,
+  getActiveRound,
+  mapAnswerSubmission,
+} from "../lib/supabaseQueries";
 import type {
   AppMode,
   AnswerSubmission,
@@ -22,6 +29,49 @@ type UseRoomSessionArgs = {
   initialRoomCode: string;
   setMode: (mode: AppMode) => void;
 };
+
+function sortRounds(rounds: RoundRecord[]) {
+  return [...rounds].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+function upsertById<T extends { id: string }>(items: T[], item: T) {
+  const found = items.some((entry) => entry.id === item.id);
+  return found ? items.map((entry) => (entry.id === item.id ? item : entry)) : [item, ...items];
+}
+
+function upsertVote(items: VoteRow[], item: VoteRow) {
+  const found = items.some(
+    (entry) =>
+      entry.round_id === item.round_id && entry.voter_team_id === item.voter_team_id
+  );
+  return found
+    ? items.map((entry) =>
+        entry.round_id === item.round_id && entry.voter_team_id === item.voter_team_id
+          ? item
+          : entry
+      )
+    : [...items, item];
+}
+
+function upsertAnswer(items: AnswerSubmission[], item: AnswerSubmission) {
+  const found = items.some(
+    (entry) =>
+      entry.round_id === item.round_id &&
+      entry.team_id === item.team_id &&
+      entry.question_index === item.question_index
+  );
+  return found
+    ? items.map((entry) =>
+        entry.round_id === item.round_id &&
+        entry.team_id === item.team_id &&
+        entry.question_index === item.question_index
+          ? item
+          : entry
+      )
+    : [...items, item];
+}
 
 export function useRoomSession({
   initialPath,
@@ -48,97 +98,134 @@ export function useRoomSession({
   const refreshSequenceRef = useRef(0);
   const refreshTimerRef = useRef<number | null>(null);
 
-  const refreshRoomData = useCallback(async (roomId: string) => {
-    const requestId = refreshSequenceRef.current + 1;
-    refreshSequenceRef.current = requestId;
-    const startedAt = performance.now();
+  const markSynced = useCallback((startedAt: number) => {
+    setSyncState({
+      isSyncing: false,
+      lastSyncAt: Date.now(),
+      latencyMs: Math.round(performance.now() - startedAt),
+    });
+  }, []);
 
-    try {
-      setSyncState((current) => ({ ...current, isSyncing: true }));
-      setLoadError(null);
+  const refreshRoom = useCallback(
+    async (roomId: string) => {
+      const startedAt = performance.now();
+      setRoom(await fetchRoom(roomId));
+      markSynced(startedAt);
+    },
+    [markSynced]
+  );
 
-      const [
-        { data: roomRow, error: roomError },
-        { data: teamRows, error: teamError },
-        { data: roundRows, error: roundError },
-      ] = await Promise.all([
-        supabase.from("rooms").select("*").eq("id", roomId).single(),
-        supabase.from("teams").select("*").eq("room_id", roomId),
-        supabase
-          .from("rounds")
-          .select("*")
-          .eq("room_id", roomId)
-          .order("created_at", { ascending: false }),
-      ]);
+  const refreshTeams = useCallback(
+    async (roomId: string) => {
+      const startedAt = performance.now();
+      setTeams(await fetchTeams(roomId));
+      markSynced(startedAt);
+    },
+    [markSynced]
+  );
 
-      if (roomError) throw roomError;
-      if (teamError) throw teamError;
-      if (roundError) throw roundError;
-      if (requestId !== refreshSequenceRef.current) return;
+  const refreshRounds = useCallback(
+    async (roomId: string) => {
+      const startedAt = performance.now();
+      const nextRounds = await fetchRounds(roomId);
+      setRounds(nextRounds);
+      setActiveRound(getActiveRound(nextRounds));
+      markSynced(startedAt);
+      return nextRounds;
+    },
+    [markSynced]
+  );
 
-      const normalizedTeams = (teamRows ?? []).map((team, index) =>
-        normalizeTeam(team as Team, index)
-      );
-      const mappedRounds = (roundRows ?? []).map((row) =>
-        toRoundRecord(row as Record<string, unknown>)
-      );
-      const currentRound =
-        mappedRounds.find((round) => round.status !== "complete") ?? null;
+  const refreshActiveRound = useCallback(
+    async (roomId: string) => {
+      const nextRounds = await refreshRounds(roomId);
+      return getActiveRound(nextRounds);
+    },
+    [refreshRounds]
+  );
 
-      setRoom(roomRow as Room);
-      setTeams(normalizedTeams);
-      setRounds(mappedRounds);
-      setActiveRound(currentRound);
-
-      if (!currentRound) {
+  const refreshVotes = useCallback(
+    async (roundId?: string) => {
+      const nextRoundId = roundId ?? activeRound?.id;
+      if (!nextRoundId) {
         setVotes([]);
+        return;
+      }
+
+      const startedAt = performance.now();
+      setVotes(await fetchVotes(nextRoundId));
+      markSynced(startedAt);
+    },
+    [activeRound?.id, markSynced]
+  );
+
+  const refreshAnswers = useCallback(
+    async (roundId?: string) => {
+      const nextRoundId = roundId ?? activeRound?.id;
+      if (!nextRoundId) {
         setAnswerSubmissions([]);
-      } else {
-        const [
-          { data: voteRows, error: voteError },
-          { data: answerRows, error: answerError },
-        ] = await Promise.all([
-          supabase.from("votes").select("*").eq("round_id", currentRound.id),
-          supabase
-            .from("answer_submissions")
-            .select("*")
-            .eq("round_id", currentRound.id)
-            .order("submitted_at", { ascending: true }),
+        return;
+      }
+
+      const startedAt = performance.now();
+      setAnswerSubmissions(await fetchAnswers(nextRoundId));
+      markSynced(startedAt);
+    },
+    [activeRound?.id, markSynced]
+  );
+
+  const refreshScores = useCallback(
+    async (roomId: string) => {
+      const startedAt = performance.now();
+      setScoreEvents(await fetchScores(roomId));
+      markSynced(startedAt);
+    },
+    [markSynced]
+  );
+
+  const refreshRoomData = useCallback(
+    async (roomId: string) => {
+      const requestId = refreshSequenceRef.current + 1;
+      refreshSequenceRef.current = requestId;
+      const startedAt = performance.now();
+
+      try {
+        setSyncState((current) => ({ ...current, isSyncing: true }));
+        setLoadError(null);
+
+        const [roomRow, teamRows, roundRows, scoreRows] = await Promise.all([
+          fetchRoom(roomId),
+          fetchTeams(roomId),
+          fetchRounds(roomId),
+          fetchScores(roomId).catch(() => []),
         ]);
 
-        if (voteError) throw voteError;
         if (requestId !== refreshSequenceRef.current) return;
-        setVotes((voteRows ?? []) as VoteRow[]);
-        if (!answerError) {
-          setAnswerSubmissions((answerRows ?? []) as AnswerSubmission[]);
-        }
-      }
 
-      const { data: scoreRows, error: scoreError } = await supabase
-        .from("score_events")
-        .select("*")
-        .eq("room_id", roomId)
-        .order("created_at", { ascending: false });
+        const currentRound = getActiveRound(roundRows);
+        const [voteRows, answerRows] = currentRound
+          ? await Promise.all([fetchVotes(currentRound.id), fetchAnswers(currentRound.id)])
+          : [[], []];
 
-      if (scoreError) {
-        setScoreEvents([]);
-      } else {
         if (requestId !== refreshSequenceRef.current) return;
-        setScoreEvents((scoreRows ?? []) as ScoreEvent[]);
-      }
 
-      setSyncState({
-        isSyncing: false,
-        lastSyncAt: Date.now(),
-        latencyMs: Math.round(performance.now() - startedAt),
-      });
-    } catch (error) {
-      setSyncState((current) => ({ ...current, isSyncing: false }));
-      setLoadError(
-        error instanceof Error ? error.message : "Unable to refresh room right now."
-      );
-    }
-  }, []);
+        setRoom(roomRow);
+        setTeams(teamRows);
+        setRounds(roundRows);
+        setActiveRound(currentRound);
+        setVotes(voteRows);
+        setAnswerSubmissions(answerRows);
+        setScoreEvents(scoreRows);
+        markSynced(startedAt);
+      } catch (error) {
+        setSyncState((current) => ({ ...current, isSyncing: false }));
+        setLoadError(
+          error instanceof Error ? error.message : "Unable to refresh room right now."
+        );
+      }
+    },
+    [markSynced]
+  );
 
   const queueRoomRefresh = useCallback(
     (roomId: string, delay = REALTIME_DEBOUNCE_MS) => {
@@ -163,18 +250,12 @@ export function useRoomSession({
       setLoadError(null);
 
       try {
-        const { data: foundRoom, error } = await supabase
-          .from("rooms")
-          .select("*")
-          .eq("code", normalizedCode)
-          .single();
+        const foundRoom = await fetchRoomByCode(normalizedCode);
 
-        if (error || !foundRoom) throw new Error("Room not found.");
-
-        setRoom(foundRoom as Room);
-        setRoomCodeInput((foundRoom as Room).code);
+        setRoom(foundRoom);
+        setRoomCodeInput(foundRoom.code);
         setMode(nextMode);
-        await refreshRoomData((foundRoom as Room).id);
+        await refreshRoomData(foundRoom.id);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Unable to load room.");
       } finally {
@@ -208,53 +289,106 @@ export function useRoomSession({
   }, [initialPath, initialRoomCode, loadRoomByCode]);
 
   useEffect(() => {
-    if (!room) return;
-
-    queueRoomRefresh(room.id, 0);
+    if (!room?.id) return;
+    const roomId = room.id;
 
     const channel = supabase
-      .channel(`room-${room.id}`)
+      .channel(`room-${roomId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "teams", filter: `room_id=eq.${room.id}` },
-        () => queueRoomRefresh(room.id)
+        { event: "*", schema: "public", table: "teams", filter: `room_id=eq.${roomId}` },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            setTeams((current) => current.filter((team) => team.id !== oldRow.id));
+            return;
+          }
+
+          const team = normalizeTeam(payload.new as Team, 0);
+          setTeams((current) => upsertById(current, team));
+          setLeaderTeam((current) => (current?.id === team.id ? team : current));
+        }
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "rounds", filter: `room_id=eq.${room.id}` },
-        () => queueRoomRefresh(room.id)
+        { event: "*", schema: "public", table: "rounds", filter: `room_id=eq.${roomId}` },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            setRounds((current) => current.filter((round) => round.id !== oldRow.id));
+            setActiveRound((current) => (current?.id === oldRow.id ? null : current));
+            return;
+          }
+
+          const round = toRoundRecord(payload.new as Record<string, unknown>);
+          setRounds((current) => sortRounds(upsertById(current, round)));
+          setActiveRound((current) => {
+            if (current?.id === round.id) {
+              return round.status === "complete" ? null : round;
+            }
+            if (round.status !== "complete") return round;
+            return current;
+          });
+        }
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "score_events", filter: `room_id=eq.${room.id}` },
-        () => queueRoomRefresh(room.id)
+        { event: "*", schema: "public", table: "score_events", filter: `room_id=eq.${roomId}` },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            setScoreEvents((current) => current.filter((event) => event.id !== oldRow.id));
+            return;
+          }
+
+          setScoreEvents((current) =>
+            upsertById(current, payload.new as ScoreEvent).sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )
+          );
+        }
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
-        () => queueRoomRefresh(room.id)
+        { event: "*", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
+        (payload) => {
+          if (payload.eventType !== "DELETE") setRoom(payload.new as Room);
+        }
       )
       .subscribe();
 
     const pollTimer = window.setInterval(() => {
-      queueRoomRefresh(room.id, 0);
+      queueRoomRefresh(roomId, 0);
     }, LIVE_SYNC_INTERVAL_MS);
 
     return () => {
       window.clearInterval(pollTimer);
       void supabase.removeChannel(channel);
     };
-  }, [queueRoomRefresh, room]);
+  }, [queueRoomRefresh, refreshRoomData, room?.id]);
 
   useEffect(() => {
-    if (!room || !activeRound?.id) return;
+    if (!activeRound?.id) return;
+
+    window.setTimeout(() => {
+      void refreshVotes(activeRound.id);
+      void refreshAnswers(activeRound.id);
+    }, 0);
 
     const channel = supabase
-      .channel(`votes-${activeRound.id}`)
+      .channel(`round-live-${activeRound.id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "votes", filter: `round_id=eq.${activeRound.id}` },
-        () => queueRoomRefresh(room.id, 60)
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            setVotes((current) => current.filter((vote) => vote.id !== oldRow.id));
+            return;
+          }
+
+          setVotes((current) => upsertVote(current, payload.new as VoteRow));
+        }
       )
       .on(
         "postgres_changes",
@@ -264,14 +398,30 @@ export function useRoomSession({
           table: "answer_submissions",
           filter: `round_id=eq.${activeRound.id}`,
         },
-        () => queueRoomRefresh(room.id, 60)
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as { id?: string };
+            setAnswerSubmissions((current) =>
+              current.filter((submission) => submission.id !== oldRow.id)
+            );
+            return;
+          }
+
+          const submission = mapAnswerSubmission(payload.new as Record<string, unknown>);
+          setAnswerSubmissions((current) =>
+            upsertAnswer(current, submission).sort(
+              (a, b) =>
+                new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
+            )
+          );
+        }
       )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [activeRound?.id, queueRoomRefresh, room]);
+  }, [activeRound?.id, refreshAnswers, refreshVotes]);
 
   useEffect(() => {
     return () => {
@@ -307,6 +457,13 @@ export function useRoomSession({
     loadError,
     setLoadError,
     syncState,
+    refreshRoom,
+    refreshTeams,
+    refreshRounds,
+    refreshActiveRound,
+    refreshVotes,
+    refreshAnswers,
+    refreshScores,
     refreshRoomData,
     queueRoomRefresh,
     loadRoomByCode,

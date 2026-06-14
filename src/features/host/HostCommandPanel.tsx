@@ -9,6 +9,8 @@ import {
 } from "../gameflow/gamePhases";
 import { AnimatedVoteBar, ChallengeRevealCard } from "../audience/ProjectorStage";
 import { TimerRing } from "../shared/TimerRing";
+import { QuizHostPanel } from "../quiz/QuizHostPanel";
+import { isRapidQuizRound } from "../quiz/quizEngine";
 import type {
   AnswerSubmission,
   RoundDefinition,
@@ -16,12 +18,14 @@ import type {
   RoundStatus,
   RoundType,
   Team,
+  VoteRow,
 } from "../../lib/types";
 
 type HostCommandPanelProps = {
   teams: Team[];
   activeRound: RoundRecord | null;
   answerSubmissions: AnswerSubmission[];
+  votes: VoteRow[];
   voteCounts: { team: Team; count: number }[];
   targetTeam: Team | null;
   rivalTeam: Team | null;
@@ -38,6 +42,15 @@ type HostCommandPanelProps = {
   lockVotes: () => void;
   completeRound: () => void;
   applyScore: (teamId: string, delta: number, reason: string) => void;
+  quizActions: {
+    pendingQuizAction: string | null;
+    startQuestion: () => void;
+    lockQuestion: () => void;
+    nextQuestion: () => void;
+    endQuizRound: () => void;
+    awardFastestCorrect: () => void;
+    awardAllCorrect: () => void;
+  };
 };
 
 export function HostCommandPanel(props: HostCommandPanelProps) {
@@ -70,6 +83,7 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
         correctAnswer: props.activeRound.correct_answer ?? undefined,
       }
     : null;
+  const isQuizRound = isRapidQuizRound(props.activeRound);
 
   return (
     <section className="host-panel host-run-game">
@@ -165,13 +179,19 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
               ))}
             </div>
 
+            <VoteStatusPanel
+              teams={props.teams}
+              votes={props.votes}
+              revealVotes={props.activeRound.status !== "voting"}
+            />
+
             <button className="danger-btn" onClick={props.lockVotes}>
               Lock votes and reveal pressure team
             </button>
           </div>
         )}
 
-        {props.activeRound && props.activeRound.status !== "voting" && (
+        {props.activeRound && props.activeRound.status !== "voting" && !isQuizRound && (
           <ChallengeRevealCard
             round={props.activeRound}
             targetTeam={props.targetTeam}
@@ -181,6 +201,24 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
       </div>
 
       {props.activeRound &&
+        isQuizRound &&
+        props.activeRound.status !== "complete" &&
+        props.activeRound.status !== "winner" && (
+          <QuizHostPanel
+            round={props.activeRound}
+            teams={props.teams}
+            submissions={props.answerSubmissions}
+            startQuestion={props.quizActions.startQuestion}
+            lockQuestion={props.quizActions.lockQuestion}
+            nextQuestion={props.quizActions.nextQuestion}
+            endQuizRound={props.quizActions.endQuizRound}
+            awardFastestCorrect={props.quizActions.awardFastestCorrect}
+            awardAllCorrect={props.quizActions.awardAllCorrect}
+          />
+        )}
+
+      {props.activeRound &&
+        !isQuizRound &&
         props.activeRound.status !== "complete" &&
         props.activeRound.status !== "winner" && (
           <AnswerRacePanel
@@ -191,6 +229,46 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
           />
         )}
     </section>
+  );
+}
+
+function VoteStatusPanel(props: {
+  teams: Team[];
+  votes: VoteRow[];
+  revealVotes: boolean;
+}) {
+  const votedTeamIds = new Set(props.votes.map((vote) => vote.voter_team_id));
+  const votedTeams = props.teams.filter((team) => votedTeamIds.has(team.id));
+  const waitingTeams = props.teams.filter((team) => !votedTeamIds.has(team.id));
+
+  return (
+    <div className="vote-status-grid">
+      <div>
+        <p className="section-kicker">Voted</p>
+        <div className="team-status-list">
+          {votedTeams.length === 0 && <span>No votes yet</span>}
+          {votedTeams.map((team) => {
+            const vote = props.votes.find((entry) => entry.voter_team_id === team.id);
+            const target = props.teams.find((entry) => entry.id === vote?.target_team_id);
+            return (
+              <span key={team.id}>
+                {team.name}
+                {props.revealVotes && target ? ` -> ${target.name}` : ""}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <p className="section-kicker">Still waiting</p>
+        <div className="team-status-list">
+          {waitingTeams.length === 0 && <span>Everyone has voted</span>}
+          {waitingTeams.map((team) => (
+            <span key={team.id}>{team.name}</span>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

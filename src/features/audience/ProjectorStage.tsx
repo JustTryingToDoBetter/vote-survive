@@ -2,13 +2,15 @@ import { motion } from "framer-motion";
 import { Music2, Sparkles, TimerReset, Vote } from "lucide-react";
 import { roundTypeLabels } from "../../data/gameContent";
 import { TEAM_COLOR_OPTIONS } from "../../data/teamPresets";
-import type { Room, RoundRecord, Team } from "../../lib/types";
+import type { AnswerSubmission, Room, RoundRecord, Team } from "../../lib/types";
 import {
   getProjectorState,
   getRoundTimerSeconds,
 } from "../gameflow/gamePhases";
 import { TeamAvatar } from "../shared/TeamAvatar";
 import { TimerRing } from "../shared/TimerRing";
+import { QuizProjectorPanel } from "../quiz/QuizProjectorPanel";
+import { isRapidQuizRound } from "../quiz/quizEngine";
 
 type VoteCount = { team: Team; count: number };
 
@@ -20,6 +22,7 @@ type ProjectorStageProps = {
   rivalTeam: Team | null;
   secondsLeft: number;
   totalVotes: number;
+  answerSubmissions: AnswerSubmission[];
 };
 
 export function ProjectorStage({
@@ -30,6 +33,7 @@ export function ProjectorStage({
   rivalTeam,
   secondsLeft,
   totalVotes,
+  answerSubmissions,
 }: ProjectorStageProps) {
   const maxVotes = Math.max(1, ...voteCounts.map((entry) => entry.count));
   const stageState = getProjectorState(room, activeRound, false);
@@ -46,6 +50,17 @@ export function ProjectorStage({
   }
 
   const voting = activeRound.status === "voting";
+  const teams = voteCounts.map((entry) => entry.team);
+
+  if (isRapidQuizRound(activeRound)) {
+    return (
+      <QuizProjectorPanel
+        round={activeRound}
+        teams={teams}
+        submissions={answerSubmissions}
+      />
+    );
+  }
 
   return (
     <section className={`projector-stage projector-${activeRound.status}`}>

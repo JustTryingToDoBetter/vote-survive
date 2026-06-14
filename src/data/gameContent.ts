@@ -1,4 +1,4 @@
-import type { RoundDefinition, RoundType } from "../lib/types";
+import type { QuizQuestion, RoundDefinition, RoundType } from "../lib/types";
 
 // ---------------------------------------------------------------------------
 // VOTING PROMPTS
@@ -295,6 +295,21 @@ function shuffle<T>(items: T[]): T[] {
   return [...items].sort(() => Math.random() - 0.5);
 }
 
+export function buildQuizQuestionSet(roundType: RoundType, count = 5): QuizQuestion[] {
+  const timeLimitSeconds = roundType === "bible_speed" ? 20 : 15;
+
+  return shuffle(multipleChoiceQuestions)
+    .slice(0, count)
+    .map((question, index) => ({
+      id: `${roundType}-${index + 1}-${question.correctAnswer.toLowerCase().replace(/\W+/g, "-")}`,
+      prompt: question.question,
+      options: shuffle(question.options),
+      correctAnswer: question.correctAnswer,
+      timeLimitSeconds,
+      points: 5,
+    }));
+}
+
 // ---------------------------------------------------------------------------
 // ROUND TYPE LABELS
 // ---------------------------------------------------------------------------
@@ -354,37 +369,45 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
       };
 
     case "quiz_burst": {
-      const question = pickRandom(multipleChoiceQuestions);
+      const questionSet = buildQuizQuestionSet(type);
+      const question = questionSet[0];
       return {
         type,
         title: "Quiz Burst Face-Off",
         prompt: pickRandom(quizBurstPrompts),
-        challenge: question.question,
+        challenge: question.prompt,
         instructions:
-          "Show the question on the game screen. Leaders answer from their phones; fastest correct answer wins.",
+          "Run each question fast. Start the question, lock answers, score, then jump straight to the next one.",
         scoringGuide:
-          "Award the fastest correct team first. Use answer order for runner-up or bonus points.",
+          "Fastest correct can earn +10. Each correct team can earn +5.",
         twist: pickRandom(twists),
         requiresVoting: false,
-        answerOptions: shuffle(question.options),
+        answerOptions: question.options,
         correctAnswer: question.correctAnswer,
+        questionSet,
+        currentQuestionIndex: 0,
+        questionStatus: "waiting",
       };
     }
 
     case "bible_speed": {
-      const question = pickRandom(multipleChoiceQuestions);
+      const questionSet = buildQuizQuestionSet(type);
+      const question = questionSet[0];
       return {
         type,
         title: "Bible Speed Face-Off",
         prompt: pickRandom(bibleSpeedPrompts),
-        challenge: question.question,
+        challenge: question.prompt,
         instructions:
-          "Show the Bible question on the game screen. Leaders answer from their phones; fastest correct answer wins.",
+          "Run quick Bible questions from the host screen. Leaders answer from phones and the host advances immediately.",
         scoringGuide:
-          "Use answer order for scoring. Fastest correct gets the main points, then award runner-up or effort points.",
+          "Fastest correct can earn +10. Each correct team can earn +5.",
         requiresVoting: false,
-        answerOptions: shuffle(question.options),
+        answerOptions: question.options,
         correctAnswer: question.correctAnswer,
+        questionSet,
+        currentQuestionIndex: 0,
+        questionStatus: "waiting",
       };
     }
 

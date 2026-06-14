@@ -14,6 +14,7 @@ import type {
   RoundType,
   ScoreEvent,
   Team,
+  VoteRow,
 } from "../../lib/types";
 
 export type HostScreenProps = {
@@ -22,6 +23,7 @@ export type HostScreenProps = {
   sortedTeams: Team[];
   activeRound: RoundRecord | null;
   answerSubmissions: AnswerSubmission[];
+  votes: VoteRow[];
   voteCounts: { team: Team; count: number }[];
   targetTeam: Team | null;
   rivalTeam: Team | null;
@@ -48,6 +50,15 @@ export type HostScreenProps = {
   setCustomScoreInputs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   revealWinner: () => void;
   resetGame: () => void;
+  quizActions: {
+    pendingQuizAction: string | null;
+    startQuestion: () => void;
+    lockQuestion: () => void;
+    nextQuestion: () => void;
+    endQuizRound: () => void;
+    awardFastestCorrect: () => void;
+    awardAllCorrect: () => void;
+  };
   updateTeamContent: (
     teamId: string,
     patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>
@@ -139,6 +150,7 @@ export function HostScreen(props: HostScreenProps) {
             teams={props.teams}
             activeRound={props.activeRound}
             answerSubmissions={props.answerSubmissions}
+            votes={props.votes}
             voteCounts={props.voteCounts}
             targetTeam={props.targetTeam}
             rivalTeam={props.rivalTeam}
@@ -155,6 +167,7 @@ export function HostScreen(props: HostScreenProps) {
             lockVotes={props.lockVotes}
             completeRound={props.completeRound}
             applyScore={props.applyScore}
+            quizActions={props.quizActions}
           />
 
           {isScoringRound && props.activeRound && (

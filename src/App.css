@@ -1389,6 +1389,67 @@ textarea {
   border-color: #ef4444;
 }
 
+.vote-status-grid,
+.quiz-answer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.team-status-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.team-status-list span {
+  border-left: 4px solid #14b8a6;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.76);
+  color: #f8fafc;
+  font-weight: 850;
+}
+
+.quiz-host-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.quiz-command-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.quiz-projector {
+  display: grid;
+  gap: 18px;
+}
+
+.quiz-projector-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.quiz-projector-options span {
+  border-left: 8px solid #38bdf8;
+  border-radius: 6px;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+  font-size: clamp(1.1rem, 2.2vw, 1.8rem);
+  font-weight: 950;
+}
+
+.quiz-projector-options span.is-correct {
+  border-color: #22c55e;
+  background: rgba(20, 83, 45, 0.88);
+}
+
 /* animations */
 .confetti-burst {
   position: absolute;

@@ -3,6 +3,8 @@ import { TimerReset, Volume2, VolumeX } from "lucide-react";
 import { roundTypeLabels } from "../../data/gameContent";
 import type { AnswerSubmission, Room, RoundRecord, Team } from "../../lib/types";
 import { getRoundTimerSeconds } from "../gameflow/gamePhases";
+import { QuizLeaderPanel } from "../quiz/QuizLeaderPanel";
+import { isRapidQuizRound } from "../quiz/quizEngine";
 import { TeamAvatar } from "../shared/TeamAvatar";
 import { TimerRing } from "../shared/TimerRing";
 import { LeaderAnswerPanel } from "./LeaderAnswerPanel";
@@ -21,6 +23,8 @@ type LeaderScreenProps = {
   toggleSound: () => void;
   submitVote: (targetTeamId: string) => void;
   submitAnswer: (answer: string) => void;
+  pendingVoteTargetId: string | null;
+  pendingAnswerKey: string | null;
 };
 
 export function LeaderScreen(props: LeaderScreenProps) {
@@ -35,8 +39,11 @@ export function LeaderScreen(props: LeaderScreenProps) {
       props.activeRound.status !== "winner"
   );
   const answerOpen = Boolean(
-    props.activeRound?.answer_options?.length && props.activeRound.correct_answer
+    props.activeRound?.answer_options?.length &&
+      props.activeRound.correct_answer &&
+      !isRapidQuizRound(props.activeRound)
   );
+  const quizOpen = isRapidQuizRound(props.activeRound);
 
   return (
     <motion.main
@@ -62,7 +69,7 @@ export function LeaderScreen(props: LeaderScreenProps) {
           <button className="ghost-btn icon-btn" onClick={props.toggleSound} aria-label="Toggle sound">
             {props.soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
           </button>
-          {(voteOpen || answerOpen) && props.activeRound && (
+          {(voteOpen || answerOpen || quizOpen) && props.activeRound && (
             <TimerRing
               secondsLeft={props.secondsLeft}
               duration={getRoundTimerSeconds(props.activeRound)}
@@ -80,14 +87,23 @@ export function LeaderScreen(props: LeaderScreenProps) {
             round={props.activeRound}
             voteOpen={voteOpen}
             answerOpen={answerOpen}
+            quizOpen={quizOpen}
             secondsLeft={props.secondsLeft}
           />
 
-          {answerOpen ? (
+          {quizOpen && props.activeRound ? (
+            <QuizLeaderPanel
+              round={props.activeRound}
+              leaderAnswer={props.leaderAnswer}
+              pendingAnswerKey={props.pendingAnswerKey}
+              submitAnswer={props.submitAnswer}
+            />
+          ) : answerOpen ? (
             <LeaderAnswerPanel
               round={props.activeRound}
               leaderAnswer={props.leaderAnswer}
               submitAnswer={props.submitAnswer}
+              pendingAnswerKey={props.pendingAnswerKey}
             />
           ) : voteOpen ? (
             <LeaderVotePanel
@@ -96,6 +112,7 @@ export function LeaderScreen(props: LeaderScreenProps) {
               leaderTeam={props.leaderTeam}
               selectedTarget={props.leaderVoteTarget}
               submitVote={props.submitVote}
+              pendingTargetId={props.pendingVoteTargetId}
             />
           ) : (
             <div className="challenge-preview">
@@ -116,11 +133,13 @@ function PlayerTaskPanel({
   round,
   voteOpen,
   answerOpen,
+  quizOpen,
   secondsLeft,
 }: {
   round: RoundRecord;
   voteOpen: boolean;
   answerOpen?: boolean;
+  quizOpen?: boolean;
   secondsLeft: number;
 }) {
   return (
@@ -130,7 +149,7 @@ function PlayerTaskPanel({
           <p className="section-kicker">{roundTypeLabels[round.round_type]}</p>
           <h2>{round.title}</h2>
         </div>
-        {(voteOpen || answerOpen) && (
+        {(voteOpen || answerOpen || quizOpen) && (
           <div className="round-mini-stat">
             <TimerReset size={16} />
             {secondsLeft}s left
@@ -138,9 +157,19 @@ function PlayerTaskPanel({
         )}
       </div>
 
-      <h3>{answerOpen ? "Choose your answer" : voteOpen ? round.prompt : round.challenge}</h3>
+      <h3>
+        {quizOpen
+          ? "Rapid-fire quiz"
+          : answerOpen
+          ? "Choose your answer"
+          : voteOpen
+          ? round.prompt
+          : round.challenge}
+      </h3>
       <p>
-        {answerOpen
+        {quizOpen
+          ? "The next question appears as soon as the host advances."
+          : answerOpen
           ? "Answer from your phone. Fastest correct answer can swing the scoring."
           : voteOpen
           ? "Vote for the team you want under pressure. You cannot vote for yourself."

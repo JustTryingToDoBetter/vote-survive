@@ -6,8 +6,18 @@ import {
   generateCode,
   normalizeTeam,
   toLegacyRoundPayload,
+  toRoundRecord,
 } from "../app/appHelpers";
+import { getCurrentQuestion, getCurrentQuestionIndex } from "../features/quiz/quizEngine";
 import { supabase } from "../lib/supabase";
+import {
+  fetchRoomByCode,
+  fetchTeamByLeaderCode,
+  roomColumns,
+  roundColumns,
+  scoreColumns,
+  teamColumns,
+} from "../lib/supabaseQueries";
 import type { SoundName } from "../lib/sound";
 import type {
   AppMode,
@@ -25,11 +35,17 @@ type SoundEffects = {
   play: (name: SoundName) => void;
 };
 
+function votesForLeader(votes: VoteRow[], leaderTeamId: string) {
+  return votes.find((vote) => vote.voter_team_id === leaderTeamId) ?? null;
+}
+
 type UseGameActionsArgs = {
   room: Room | null;
   teams: Team[];
   rounds: RoundRecord[];
   activeRound: RoundRecord | null;
+  votes: VoteRow[];
+  answerSubmissions: AnswerSubmission[];
   leaderTeam: Team | null;
   sortedVoteCounts: { team: Team; count: number }[];
   latestScoreEvent: ScoreEvent | null;
@@ -60,6 +76,8 @@ export function useGameActions({
   teams,
   rounds,
   activeRound,
+  votes,
+  answerSubmissions,
   leaderTeam,
   sortedVoteCounts,
   latestScoreEvent,
@@ -85,6 +103,8 @@ export function useGameActions({
   queueRoomRefresh,
 }: UseGameActionsArgs) {
   const [scoringTeamIds, setScoringTeamIds] = useState<Record<string, boolean>>({});
+  const [pendingVoteTargetId, setPendingVoteTargetId] = useState<string | null>(null);
+  const [pendingAnswerKey, setPendingAnswerKey] = useState<string | null>(null);
 
   async function createRoom() {
     setIsLoading(true);
@@ -97,7 +117,7 @@ export function useGameActions({
       const { data: createdRoom, error: roomError } = await supabase
         .from("rooms")
         .insert({ code, host_pin: hostPin, status: "active" })
-        .select()
+        .select(roomColumns)
         .single();
 
       if (roomError || !createdRoom) throw roomError ?? new Error("Room creation failed.");
@@ -116,7 +136,7 @@ export function useGameActions({
             color: team.color,
           }))
         )
-        .select();
+        .select(teamColumns);
 
       if (teamsError) throw teamsError;
 
@@ -144,22 +164,11 @@ export function useGameActions({
     setLoadError(null);
 
     try {
-      const { data: foundRoom, error: roomError } = await supabase
-        .from("rooms")
-        .select("*")
-        .eq("code", roomCodeInput.trim().toUpperCase())
-        .single();
-
-      if (roomError || !foundRoom) throw new Error("Room not found.");
-
-      const { data: foundTeam, error: teamError } = await supabase
-        .from("teams")
-        .select("*")
-        .eq("room_id", foundRoom.id)
-        .eq("leader_code", teamCodeInput.trim().toUpperCase())
-        .single();
-
-      if (teamError || !foundTeam) throw new Error("Team code not found.");
+      const foundRoom = await fetchRoomByCode(roomCodeInput.trim().toUpperCase());
+      const foundTeam = await fetchTeamByLeaderCode(
+        foundRoom.id,
+        teamCodeInput.trim().toUpperCase()
+      );
 
       const { error: joinedError } = await supabase
         .from("teams")
@@ -178,6 +187,7 @@ export function useGameActions({
         )
       );
       setMode("leader");
+      queueRoomRefresh(foundRoom.id, 0);
       if (typeof window !== "undefined") {
         const url = new URL(window.location.href);
         url.pathname = "/join";
@@ -219,16 +229,30 @@ export function useGameActions({
         timer_seconds: definition.requiresVoting ? selectedTimer : null,
         answer_options: definition.answerOptions ?? null,
         correct_answer: definition.correctAnswer ?? null,
+        question_set: definition.questionSet ?? null,
+        current_question_index: definition.currentQuestionIndex ?? 0,
+        question_status: definition.questionStatus ?? "waiting",
+        question_started_at: null,
       };
 
-      const { error } = await supabase.from("rounds").insert(roundPayload);
+      const { data: insertedRound, error } = await supabase
+        .from("rounds")
+        .insert(roundPayload)
+        .select(roundColumns)
+        .single();
 
       if (error) {
         const legacyPayload: Partial<typeof roundPayload> = { ...roundPayload };
         delete legacyPayload.timer_seconds;
         delete legacyPayload.answer_options;
         delete legacyPayload.correct_answer;
-        const { error: retryError } = await supabase.from("rounds").insert(legacyPayload);
+        delete legacyPayload.question_set;
+        delete legacyPayload.current_question_index;
+        delete legacyPayload.question_status;
+        delete legacyPayload.question_started_at;
+        const { error: retryError } = await supabase
+          .from("rounds")
+          .insert(legacyPayload);
 
         if (retryError) {
           const { error: minimalRetryError } = await supabase
@@ -237,13 +261,18 @@ export function useGameActions({
 
           if (minimalRetryError) throw minimalRetryError;
         }
+        queueRoomRefresh(room.id, 0);
+      } else if (insertedRound) {
+        const mappedRound = toRoundRecord(insertedRound as Record<string, unknown>);
+        setRounds((current) => [mappedRound, ...current]);
+        setActiveRound(mappedRound);
       }
 
       await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
+      setRoom((current) => (current ? { ...current, status: "active" } : current));
 
       setSelectedRoundType(definition.type);
       setShowWinner(false);
-      queueRoomRefresh(room.id, 0);
       sound.play("roundStart");
     } catch (error) {
       setLoadError(
@@ -254,6 +283,26 @@ export function useGameActions({
 
   async function submitVote(targetTeamId: string) {
     if (!activeRound || !leaderTeam || targetTeamId === leaderTeam.id) return;
+    if (pendingVoteTargetId) return;
+
+    const previousVotes = votesForLeader(votes, leaderTeam.id);
+    setPendingVoteTargetId(targetTeamId);
+    setVotes((current) => {
+      const optimisticVote = {
+        id: previousVotes?.id ?? `optimistic-${leaderTeam.id}`,
+        round_id: activeRound.id,
+        voter_team_id: leaderTeam.id,
+        target_team_id: targetTeamId,
+      };
+
+      if (current.some((vote) => vote.voter_team_id === leaderTeam.id)) {
+        return current.map((vote) =>
+          vote.voter_team_id === leaderTeam.id ? optimisticVote : vote
+        );
+      }
+
+      return [...current, optimisticVote];
+    });
 
     const { error } = await supabase.from("votes").upsert(
       {
@@ -266,76 +315,113 @@ export function useGameActions({
 
     if (error) {
       setLoadError(error.message);
+      setVotes((current) => {
+        if (previousVotes) {
+          return current.map((vote) =>
+            vote.voter_team_id === leaderTeam.id ? previousVotes : vote
+          );
+        }
+        return current.filter((vote) => vote.voter_team_id !== leaderTeam.id);
+      });
+      setPendingVoteTargetId(null);
       return;
     }
 
-    setVotes((current) => {
-      const existing = current.find((vote) => vote.voter_team_id === leaderTeam.id);
-      if (existing) {
-        return current.map((vote) =>
-          vote.voter_team_id === leaderTeam.id
-            ? { ...vote, target_team_id: targetTeamId }
-            : vote
-        );
-      }
-
-      return [
-        ...current,
-        {
-          id: `optimistic-${leaderTeam.id}`,
-          round_id: activeRound.id,
-          voter_team_id: leaderTeam.id,
-          target_team_id: targetTeamId,
-        },
-      ];
-    });
-    if (room) queueRoomRefresh(room.id, 250);
+    setPendingVoteTargetId(null);
     navigator.vibrate?.(40);
     sound.play("voteSubmit");
   }
 
   async function submitAnswer(answer: string) {
-    if (!activeRound || !leaderTeam || !activeRound.correct_answer) return;
+    if (!activeRound || !leaderTeam) return;
+
+    const currentQuestion = getCurrentQuestion(activeRound);
+    const correctAnswer = currentQuestion?.correctAnswer ?? activeRound.correct_answer;
+    if (!correctAnswer) return;
+
+    const questionIndex = getCurrentQuestionIndex(activeRound);
+    const answerKey = `${activeRound.id}:${questionIndex}:${answer}`;
+    if (pendingAnswerKey) return;
 
     const submittedAt = new Date().toISOString();
-    const isCorrect = answer === activeRound.correct_answer;
+    const isCorrect = answer === correctAnswer;
+    const previousSubmission =
+      answerSubmissions.find(
+        (submission) =>
+          submission.team_id === leaderTeam.id &&
+          submission.round_id === activeRound.id &&
+          submission.question_index === questionIndex
+      ) ?? null;
+    const optimistic = {
+      id: previousSubmission?.id ?? `optimistic-answer-${leaderTeam.id}-${questionIndex}`,
+      round_id: activeRound.id,
+      team_id: leaderTeam.id,
+      question_index: questionIndex,
+      answer,
+      is_correct: isCorrect,
+      submitted_at: submittedAt,
+    };
 
-    const { error } = await supabase.from("answer_submissions").upsert(
-      {
-        round_id: activeRound.id,
-        team_id: leaderTeam.id,
-        answer,
-        is_correct: isCorrect,
-        submitted_at: submittedAt,
-      },
-      { onConflict: "round_id,team_id" }
-    );
-
-    if (error) {
-      setLoadError(error.message);
-      return;
-    }
-
+    setPendingAnswerKey(answerKey);
     setAnswerSubmissions((current) => {
-      const optimistic = {
-        id: `optimistic-answer-${leaderTeam.id}`,
-        round_id: activeRound.id,
-        team_id: leaderTeam.id,
-        answer,
-        is_correct: isCorrect,
-        submitted_at: submittedAt,
-      };
-
-      if (current.some((submission) => submission.team_id === leaderTeam.id)) {
+      if (
+        current.some(
+          (submission) =>
+            submission.team_id === leaderTeam.id &&
+            submission.round_id === activeRound.id &&
+            submission.question_index === questionIndex
+        )
+      ) {
         return current.map((submission) =>
-          submission.team_id === leaderTeam.id ? optimistic : submission
+          submission.team_id === leaderTeam.id &&
+          submission.round_id === activeRound.id &&
+          submission.question_index === questionIndex
+            ? optimistic
+            : submission
         );
       }
 
       return [...current, optimistic];
     });
 
-    if (room) queueRoomRefresh(room.id, 150);
+    const { error } = await supabase.from("answer_submissions").upsert(
+      {
+        round_id: activeRound.id,
+        team_id: leaderTeam.id,
+        question_index: questionIndex,
+        answer,
+        is_correct: isCorrect,
+        submitted_at: submittedAt,
+      },
+      { onConflict: "round_id,team_id,question_index" }
+    );
+
+    if (error) {
+      setLoadError(error.message);
+      setAnswerSubmissions((current) => {
+        if (previousSubmission) {
+          return current.map((submission) =>
+            submission.team_id === leaderTeam.id &&
+            submission.round_id === activeRound.id &&
+            submission.question_index === questionIndex
+              ? previousSubmission
+              : submission
+          );
+        }
+        return current.filter(
+          (submission) =>
+            !(
+              submission.team_id === leaderTeam.id &&
+              submission.round_id === activeRound.id &&
+              submission.question_index === questionIndex
+            )
+        );
+      });
+      setPendingAnswerKey(null);
+      return;
+    }
+
+    setPendingAnswerKey(null);
     navigator.vibrate?.(40);
     sound.play(isCorrect ? "score" : "voteSubmit");
   }
@@ -358,12 +444,18 @@ export function useGameActions({
       return;
     }
 
-    setActiveRound((current) =>
-      current?.id === activeRound.id
-        ? { ...current, status: "scoring", target_team_id: winner?.team.id ?? null }
-        : current
+      setActiveRound((current) =>
+        current?.id === activeRound.id
+          ? { ...current, status: "scoring", target_team_id: winner?.team.id ?? null }
+          : current
+      );
+    setRounds((current) =>
+      current.map((round) =>
+        round.id === activeRound.id
+          ? { ...round, status: "scoring", target_team_id: winner?.team.id ?? null }
+          : round
+      )
     );
-    if (room) queueRoomRefresh(room.id, 120);
     sound.play("reveal");
   }
 
@@ -396,20 +488,26 @@ export function useGameActions({
         )
       );
 
-      const { error: eventError } = await supabase.from("score_events").insert({
-        room_id: room.id,
-        round_id: activeRound?.id ?? null,
-        team_id: teamId,
-        delta: finalDelta,
-        reason,
-      });
+      const { data: scoreEvent, error: eventError } = await supabase
+        .from("score_events")
+        .insert({
+          room_id: room.id,
+          round_id: activeRound?.id ?? null,
+          team_id: teamId,
+          delta: finalDelta,
+          reason,
+        })
+        .select(scoreColumns)
+        .single();
 
       if (eventError) {
         setLoadError(eventError.message);
         return;
       }
 
-      queueRoomRefresh(room.id, 250);
+      if (scoreEvent) {
+        setScoreEvents((current) => [scoreEvent as ScoreEvent, ...current]);
+      }
       sound.play("score");
     } finally {
       setScoringTeamIds((current) => ({ ...current, [teamId]: false }));
@@ -447,7 +545,13 @@ export function useGameActions({
         entry.id === team.id ? { ...entry, score: entry.score - latestScoreEvent.delta } : entry
       )
     );
-    if (room) queueRoomRefresh(room.id, 250);
+    setScoreEvents((current) =>
+      current.map((event) =>
+        event.id === latestScoreEvent.id
+          ? { ...event, undone_at: new Date().toISOString() }
+          : event
+      )
+    );
   }
 
   async function completeRound() {
@@ -471,14 +575,22 @@ export function useGameActions({
       setActiveRound((current) =>
         current?.id === activeRound.id ? { ...current, status: "winner" } : current
       );
-      if (room) queueRoomRefresh(room.id, 120);
+      setRounds((current) =>
+        current.map((round) =>
+          round.id === activeRound.id ? { ...round, status: "winner" } : round
+        )
+      );
       sound.play("winner");
       return;
     }
 
     await supabase.from("rooms").update({ status: "active" }).eq("id", activeRound.room_id);
     setActiveRound(null);
-    if (room) queueRoomRefresh(room.id, 120);
+    setRounds((current) =>
+      current.map((round) =>
+        round.id === activeRound.id ? { ...round, status: "complete" } : round
+      )
+    );
   }
 
   async function revealWinner() {
@@ -486,7 +598,6 @@ export function useGameActions({
     setShowWinner(true);
     await supabase.from("rooms").update({ status: "winner" }).eq("id", room.id);
     setRoom((current) => (current ? { ...current, status: "winner" } : current));
-    queueRoomRefresh(room.id, 120);
     sound.play("winner");
   }
 
@@ -556,6 +667,8 @@ export function useGameActions({
 
   return {
     scoringTeamIds,
+    pendingVoteTargetId,
+    pendingAnswerKey,
     createRoom,
     joinAsLeader,
     startRound,
