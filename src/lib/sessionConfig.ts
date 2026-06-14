@@ -1,0 +1,2 @@
+export const LIVE_SYNC_INTERVAL_MS = 2500;
+export const REALTIME_DEBOUNCE_MS = 120;

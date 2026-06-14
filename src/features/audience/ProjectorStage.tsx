@@ -80,7 +80,7 @@ export function ProjectorStage({
                 duration={getRoundTimerSeconds(activeRound)}
               />
             </motion.div>
-            <div className="live-pill">
+            <div className="live-signal">
               <Vote size={16} />
               {totalVotes} votes in
             </div>

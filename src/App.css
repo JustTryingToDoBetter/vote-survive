@@ -97,7 +97,7 @@ textarea {
 
 .section-kicker,
 .eyebrow,
-.live-pill,
+.live-signal,
 .arena-label,
 .submitted-banner,
 .round-mini-stat,
@@ -161,9 +161,9 @@ textarea {
 }
 
 .hero-copy,
-.join-card,
+.join-panel,
 .setup-card,
-.game-card,
+.stage-block,
 .leader-stage,
 .winner-panel,
 .round-reveal,
@@ -179,8 +179,8 @@ textarea {
 }
 
 .hero-copy,
-.join-card,
-.game-card,
+.join-panel,
+.stage-block,
 .leader-stage,
 .waiting-card,
 .winner-panel {
@@ -201,7 +201,7 @@ textarea {
 }
 
 .hero-copy p,
-.join-card p {
+.join-panel p {
   color: #cbd5e1;
   line-height: 1.55;
 }
@@ -219,7 +219,7 @@ textarea {
 .panel-topline,
 .winner-hero,
 .timer-option-row,
-.score-card-top {
+.score-lane-top {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -231,7 +231,7 @@ textarea {
 .ghost-btn,
 .join-form button,
 .danger-btn,
-.score-chip,
+.score-action,
 .emoji-option,
 .color-option,
 .add-team-card {
@@ -287,7 +287,7 @@ textarea {
 .join-form button:hover,
 .danger-btn:hover,
 .ghost-btn:hover,
-.score-chip:hover,
+.score-action:hover,
 .emoji-option:hover,
 .color-option:hover,
 .add-team-card:hover {
@@ -401,7 +401,7 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.host-stat-card {
+.status-strip {
   display: grid;
   gap: 8px;
   border-left: 6px solid #14b8a6;
@@ -410,7 +410,7 @@ textarea {
   background: rgba(15, 23, 42, 0.9);
 }
 
-.host-stat-icon {
+.status-strip-icon {
   display: grid;
   width: 38px;
   height: 38px;
@@ -420,7 +420,7 @@ textarea {
   background: #14b8a6;
 }
 
-.host-stat-card span,
+.status-strip span,
 .round-meta-grid span,
 .answer-race-row span,
 .answer-race-row em,
@@ -432,7 +432,7 @@ textarea {
   text-transform: uppercase;
 }
 
-.host-stat-card strong {
+.status-strip strong {
   color: #fff;
   line-height: 1.2;
 }
@@ -523,7 +523,7 @@ textarea {
   margin-top: 20px;
 }
 
-.live-pill {
+.live-signal {
   color: #fecdd3;
   background: rgba(190, 18, 60, 0.34);
 }
@@ -683,7 +683,7 @@ textarea {
   color: rgba(255, 255, 255, 0.86);
 }
 
-.score-card {
+.score-lane {
   display: grid;
   gap: 14px;
   border-left: 8px solid var(--team-color);
@@ -715,7 +715,7 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.score-chip {
+.score-action {
   border-radius: 6px;
   padding: 11px 12px;
   color: #f8fafc;
@@ -1586,9 +1586,9 @@ select {
 }
 
 .hero-copy,
-.join-card,
+.join-panel,
 .setup-card,
-.game-card,
+.stage-block,
 .leader-stage,
 .winner-panel,
 .round-reveal,
@@ -1617,7 +1617,7 @@ select {
 }
 
 .hero-copy p,
-.join-card p,
+.join-panel p,
 .muted-text,
 .header-helper,
 .round-reveal p,
@@ -1637,7 +1637,7 @@ select {
 
 .section-kicker,
 .eyebrow,
-.live-pill,
+.live-signal,
 .arena-label,
 .submitted-banner,
 .round-mini-stat,
@@ -1667,7 +1667,7 @@ select {
 }
 
 .host-gameflow,
-.game-card,
+.stage-block,
 .leader-stage,
 .round-reveal,
 .projector-stage {
@@ -1683,14 +1683,14 @@ select {
 }
 
 .phase-lane,
-.host-stat-card,
+.status-strip,
 .timer-control-panel,
 .round-meta-grid div,
 .vote-bar-wrap,
 .leaderboard-row,
 .team-code-card,
 .join-team-preview,
-.score-card,
+.score-lane,
 .admin-round-editor,
 .admin-empty-round,
 .answer-race-row,
@@ -1720,7 +1720,7 @@ select {
   background: #fffbeb;
 }
 
-.host-stat-icon,
+.status-strip-icon,
 .phase-lane.is-live span {
   color: #042f2e;
   background: #5eead4;
@@ -1732,7 +1732,7 @@ select {
   background: #facc15;
 }
 
-.host-stat-card strong,
+.status-strip strong,
 .round-meta-grid strong,
 .answer-race-row b,
 .leaderboard-team-copy strong,
@@ -1799,7 +1799,7 @@ select {
   background: #facc15;
 }
 
-.score-chip {
+.score-action {
   color: #172033;
   background: color-mix(in srgb, var(--team-color) 20%, white);
 }
