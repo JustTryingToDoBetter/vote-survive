@@ -1562,3 +1562,359 @@ textarea {
     scroll-behavior: auto !important;
   }
 }
+
+/* bright practical v1 theme */
+:root {
+  color: #172033;
+  background: #fff8e7;
+  color-scheme: light;
+}
+
+body {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(250, 204, 21, 0.26), transparent 28%),
+    radial-gradient(circle at 90% 4%, rgba(20, 184, 166, 0.18), transparent 28%),
+    linear-gradient(180deg, #fff8e7 0%, #f8fbff 52%, #eefdf8 100%);
+}
+
+input,
+textarea,
+select {
+  border-color: rgba(23, 32, 51, 0.18);
+  color: #172033;
+  background: #ffffff;
+}
+
+.hero-copy,
+.join-card,
+.setup-card,
+.game-card,
+.leader-stage,
+.winner-panel,
+.round-reveal,
+.audience-main,
+.host-gameflow,
+.projector-stage {
+  border-color: rgba(23, 32, 51, 0.12);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 251, 235, 0.92)),
+    linear-gradient(90deg, rgba(250, 204, 21, 0.12), rgba(20, 184, 166, 0.1));
+  box-shadow: 0 18px 46px rgba(23, 32, 51, 0.12);
+}
+
+.hero-copy h1,
+.setup-header h1,
+.game-header h1,
+.mobile-top h1,
+.audience-header h1,
+.round-reveal h2,
+.round-reveal h3,
+.player-task-panel h3,
+.projector-main-call h3,
+.final-reveal-team strong,
+.score-number {
+  color: #172033;
+}
+
+.hero-copy p,
+.join-card p,
+.muted-text,
+.header-helper,
+.round-reveal p,
+.winner-panel p,
+.host-gameflow-copy span,
+.player-task-panel p,
+.leader-bottom-action span,
+.projector-state-strip b,
+.leaderboard-team-copy span,
+.vote-team-meta span,
+.team-code-card span,
+.join-team-preview span,
+.score-label,
+.score-team-wrap span {
+  color: #475569;
+}
+
+.section-kicker,
+.eyebrow,
+.live-pill,
+.arena-label,
+.submitted-banner,
+.round-mini-stat,
+.sync-status {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.primary-btn,
+.join-form button {
+  color: #172033;
+  background: linear-gradient(135deg, #facc15, #fb923c);
+  box-shadow: 0 7px 0 #d97706;
+}
+
+.danger-btn {
+  color: #ffffff;
+  background: linear-gradient(135deg, #ef4444, #f97316);
+  box-shadow: 0 7px 0 #b91c1c;
+}
+
+.ghost-btn,
+.info-chip {
+  border-color: rgba(23, 32, 51, 0.14);
+  color: #172033;
+  background: #ffffff;
+}
+
+.host-gameflow,
+.game-card,
+.leader-stage,
+.round-reveal,
+.projector-stage {
+  border-top: 5px solid #facc15;
+}
+
+.host-gameflow-copy h2,
+.projector-main-call h2,
+.projector-stage.is-waiting h2,
+.final-reveal-header h2,
+.final-winner-feature h3 {
+  color: #b45309;
+}
+
+.phase-lane,
+.host-stat-card,
+.timer-control-panel,
+.round-meta-grid div,
+.vote-bar-wrap,
+.leaderboard-row,
+.team-code-card,
+.join-team-preview,
+.score-card,
+.admin-round-editor,
+.admin-empty-round,
+.answer-race-row,
+.projector-live-rail {
+  color: #172033;
+  background: #ffffff;
+}
+
+.phase-lane {
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
+.phase-lane span {
+  color: #172033;
+  background: #e2e8f0;
+}
+
+.phase-lane.is-live {
+  border-color: #14b8a6;
+  color: #172033;
+  background: #ecfeff;
+}
+
+.phase-lane.is-current {
+  border-color: #facc15;
+  background: #fffbeb;
+}
+
+.host-stat-icon,
+.phase-lane.is-live span {
+  color: #042f2e;
+  background: #5eead4;
+}
+
+.phase-lane.is-current span,
+.rank {
+  color: #172033;
+  background: #facc15;
+}
+
+.host-stat-card strong,
+.round-meta-grid strong,
+.answer-race-row b,
+.leaderboard-team-copy strong,
+.score-team-wrap strong,
+.team-code-card strong,
+.join-team-preview strong {
+  color: #172033;
+}
+
+.round-reveal-final,
+.final-round-card {
+  border-color: rgba(250, 204, 21, 0.55);
+  background:
+    linear-gradient(135deg, rgba(255, 251, 235, 0.98), rgba(255, 237, 213, 0.95)),
+    #ffffff;
+}
+
+.round-mini-stat {
+  color: #9a3412;
+  background: #ffedd5;
+}
+
+.timer-ring {
+  background:
+    radial-gradient(circle closest-side, #ffffff 70%, transparent 72%),
+    conic-gradient(#f97316 var(--progress), #fed7aa 0);
+}
+
+.timer-ring strong {
+  color: #172033;
+}
+
+.timer-ring span {
+  color: #64748b;
+}
+
+.vote-bar-track,
+.score-meter {
+  background: #e2e8f0;
+}
+
+.challenge-reveal {
+  color: #172033;
+  border-color: rgba(249, 115, 22, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.7), transparent 30%),
+    linear-gradient(135deg, #fde68a, #fdba74 52%, #5eead4);
+}
+
+.challenge-reveal h3,
+.pressure-team-banner strong,
+.muted-on-dark {
+  color: #172033;
+}
+
+.matchup-strip {
+  border-color: rgba(23, 32, 51, 0.14);
+  color: #172033;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.matchup-strip b {
+  color: #172033;
+  background: #facc15;
+}
+
+.score-chip {
+  color: #172033;
+  background: color-mix(in srgb, var(--team-color) 20%, white);
+}
+
+.latest-score-strip,
+.projector-main-call strong {
+  color: #172033;
+  background: #fffbeb;
+}
+
+.room-code-panel {
+  border-color: rgba(180, 83, 9, 0.36);
+  background: #fffbeb;
+}
+
+.room-code-panel strong {
+  color: #b45309;
+}
+
+.leader-shell,
+.audience-shell {
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--team-color, #14b8a6) 16%, transparent), transparent 32%),
+    linear-gradient(180deg, #fff8e7, #f8fbff);
+}
+
+.leader-identity,
+.player-task-panel,
+.leader-bottom-action {
+  color: #172033;
+  background: #ffffff;
+}
+
+.leader-bottom-action {
+  border-color: rgba(180, 83, 9, 0.24);
+  box-shadow: 0 16px 34px rgba(23, 32, 51, 0.16);
+}
+
+.leader-bottom-action strong {
+  color: #b45309;
+}
+
+.vote-tile,
+.answer-option {
+  color: #172033;
+  border-color: rgba(23, 32, 51, 0.1);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--team-color) 16%, white), #ffffff);
+  box-shadow: 0 14px 30px rgba(23, 32, 51, 0.1);
+}
+
+.vote-tile span,
+.answer-option span {
+  color: #475569;
+}
+
+.submitted-banner {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.challenge-preview {
+  color: #172033;
+  background: linear-gradient(135deg, #ccfbf1, #fef3c7);
+}
+
+.projector-state-strip {
+  border-color: rgba(23, 32, 51, 0.14);
+}
+
+.projector-state-strip span {
+  color: #b45309;
+}
+
+.leaderboard-row.is-first,
+.final-reveal-card.is-winner {
+  border-color: #facc15;
+  background: #fffbeb;
+}
+
+.final-reveal-card,
+.final-winner-feature,
+.final-team-video-placeholder {
+  color: #172033;
+  background: #ffffff;
+}
+
+.final-reveal-card b {
+  color: #0f766e;
+}
+
+.final-winner-feature {
+  border-color: rgba(180, 83, 9, 0.22);
+}
+
+.final-winner-feature span {
+  color: #475569;
+}
+
+.team-avatar {
+  border-color: rgba(23, 32, 51, 0.14);
+  color: #172033;
+  background: color-mix(in srgb, var(--team-color, #14b8a6) 20%, white);
+}
+
+.emoji-option,
+.add-team-card {
+  color: #172033;
+  background: #ffffff;
+}
+
+.danger-link {
+  color: #be123c;
+}
+
+.error-banner {
+  color: #7f1d1d;
+  background: #fee2e2;
+}
