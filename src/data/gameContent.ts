@@ -20,6 +20,21 @@ const votingPrompts = [
   "Who do you send into battle when everything is on the line?",
   "Which team would you least want to face in a 1v1 — vote them in!",
   "Which team has been the loudest? Time to back it up.",
+  "Which team has been moving like main characters all night?",
+  "Which team looks way too comfortable right now?",
+  "Which team should prove their confidence was not just volume?",
+  "Which team has the biggest comeback energy?",
+  "Which team would survive a surprise challenge with absolutely no prep?",
+  "Which team needs a loving public wake-up call?",
+  "Which team has been quietly plotting and needs to be exposed?",
+  "Which team should take the next big swing?",
+  "Which team is one challenge away from either glory or chaos?",
+  "Which team leader has been acting like they are built different?",
+  "Which team deserves the pressure because they can actually handle it?",
+  "Which team would make the funniest highlight reel under pressure?",
+  "Which team has been too safe and needs to risk something?",
+  "Which team should defend their honour right now?",
+  "Which team is ready for a youth-night legend moment?",
 ];
 
 const votingChallenges = [
@@ -65,6 +80,13 @@ const finalChallenges = [
   "The top two teams face off, then the rest fight for placement points.",
   "One final all-play challenge decides the scoreboard. Scores are doubled.",
   "Captains step forward for a final pressure test. Every score action counts double.",
+  "Final Pack: Captain Gauntlet. Each leader faces one speed question, one acting prompt, and one courage challenge. Score every moment double.",
+  "Final Pack: Redemption Relay. Last place chooses the first matchup, winners keep advancing, and every score action counts double.",
+  "Final Pack: Crowd Court. Teams perform a 20-second defence speech, then complete one host-picked challenge. Host scores confidence and execution double.",
+  "Final Pack: Bible Boss Rush. Run five rapid Bible questions, then one final sudden-death question for the top two teams. Double every award.",
+  "Final Pack: Team Legacy. Each team gets 30 seconds to create a chant, a pose, and a one-line testimony-style hype moment. Score big swings double.",
+  "Final Pack: Chaos Ladder. Start with the lowest score team challenging anyone above them. A win lets them climb and score double.",
+  "Final Pack: The Last Stand. Top team must defend their lead in a 1v1, while trailing teams fight for one final double-points steal.",
 ];
 
 // ---------------------------------------------------------------------------
@@ -117,6 +139,18 @@ const allPlayChallenges = [
   "4-team simultaneous quiz: Host reads a question, first team to stand wins the point. 5 questions, fast fire.",
   "Name chain: Teams take turns — each team must name a Bible character whose name starts with the last letter of the previous answer.",
   "2v2 speed round: Which team can correctly order 5 Bible events chronologically first? Host reads them out.",
+  "Phone-free scavenger sprint: teams have 25 seconds to bring the host one shoe, one Bible, and one person who knows Psalm 23.",
+  "Youth group weather report: each team gives a dramatic forecast for Jonah's boat trip. Most committed performance wins.",
+  "Silent disco directions: one teammate silently acts out a Bible story while the team guesses. Fastest clean guess wins.",
+  "Snack sermon: teams get 30 seconds to preach a mini-message using an imaginary packet of chips as the object lesson.",
+  "Freeze-frame trailer: build three still scenes that tell David and Goliath like a movie trailer.",
+  "Choir chaos: teams have 20 seconds to turn their team name into a worship-conference-style chant.",
+  "Reverse charades: the whole team acts while the leader guesses the Bible character.",
+  "Emoji testimony: teams describe a Bible story using only faces, gestures, and dramatic pointing.",
+  "Awkward handshake altar call: invent the most complicated team handshake that still looks clean.",
+  "Speed compliment battle: teams have 20 seconds to hype another team without repeating any adjective.",
+  "Lost announcement challenge: each team announces a missing sandal like it is the most important news of the night.",
+  "One-word sermon relay: each person adds exactly one word to build a dramatic sentence about courage.",
 ];
 
 // ---------------------------------------------------------------------------
@@ -190,7 +224,13 @@ export const legacyBibleQuestions = [
   "Who wrote Lamentations and what was happening at the time?",
 ];
 
-const multipleChoiceQuestions = [
+type MultipleChoiceQuestion = {
+  question: string;
+  correctAnswer: string;
+  options: string[];
+};
+
+const multipleChoiceQuestions: MultipleChoiceQuestion[] = [
   {
     question: "Who built the ark?",
     correctAnswer: "Noah",
@@ -231,6 +271,189 @@ const multipleChoiceQuestions = [
     correctAnswer: "Sea of Galilee",
     options: ["Sea of Galilee", "Dead Sea", "Red Sea", "Mediterranean Sea"],
   },
+  {
+    question: "Who climbed a tree to see Jesus?",
+    correctAnswer: "Zacchaeus",
+    options: ["Zacchaeus", "Nicodemus", "Bartimaeus", "Matthew"],
+  },
+  {
+    question: "Who was thrown into the lions' den?",
+    correctAnswer: "Daniel",
+    options: ["Daniel", "Joseph", "Elisha", "Nehemiah"],
+  },
+  {
+    question: "Who led the Israelites out of Egypt?",
+    correctAnswer: "Moses",
+    options: ["Moses", "Joshua", "Aaron", "Caleb"],
+  },
+  {
+    question: "What did Jesus feed the 5000 with?",
+    correctAnswer: "Five loaves and two fish",
+    options: ["Five loaves and two fish", "Manna", "Seven loaves", "Bread and wine"],
+  },
+  {
+    question: "Who was Ruth's mother-in-law?",
+    correctAnswer: "Naomi",
+    options: ["Naomi", "Hannah", "Miriam", "Esther"],
+  },
+  {
+    question: "What was Paul's name before his conversion?",
+    correctAnswer: "Saul",
+    options: ["Saul", "Simon", "Stephen", "Silas"],
+  },
+  {
+    question: "Who interpreted Pharaoh's dreams?",
+    correctAnswer: "Joseph",
+    options: ["Joseph", "Daniel", "Moses", "Samuel"],
+  },
+  {
+    question: "What was the first miracle of Jesus?",
+    correctAnswer: "Turning water into wine",
+    options: ["Turning water into wine", "Healing a blind man", "Feeding 5000", "Walking on water"],
+  },
+  {
+    question: "Which prophet challenged the prophets of Baal on Mount Carmel?",
+    correctAnswer: "Elijah",
+    options: ["Elijah", "Elisha", "Isaiah", "Jeremiah"],
+  },
+  {
+    question: "Who was queen and helped save her people?",
+    correctAnswer: "Esther",
+    options: ["Esther", "Deborah", "Ruth", "Abigail"],
+  },
+  {
+    question: "What happened on the seventh day of creation?",
+    correctAnswer: "God rested",
+    options: ["God rested", "God made light", "God made people", "God made birds"],
+  },
+  {
+    question: "Who was Jesus' earthly father?",
+    correctAnswer: "Joseph",
+    options: ["Joseph", "Zechariah", "Simeon", "Jacob"],
+  },
+  {
+    question: "Who baptised Jesus?",
+    correctAnswer: "John the Baptist",
+    options: ["John the Baptist", "Peter", "Andrew", "James"],
+  },
+  {
+    question: "Which disciple was a tax collector?",
+    correctAnswer: "Matthew",
+    options: ["Matthew", "Philip", "Thomas", "Jude"],
+  },
+  {
+    question: "Who asked Jesus how to be born again?",
+    correctAnswer: "Nicodemus",
+    options: ["Nicodemus", "Zacchaeus", "Pilate", "Cornelius"],
+  },
+  {
+    question: "Who prayed in a fish?",
+    correctAnswer: "Jonah",
+    options: ["Jonah", "Noah", "Job", "Joel"],
+  },
+  {
+    question: "Who became king after Saul?",
+    correctAnswer: "David",
+    options: ["David", "Solomon", "Samuel", "Jonathan"],
+  },
+  {
+    question: "Who was the first martyr in Acts?",
+    correctAnswer: "Stephen",
+    options: ["Stephen", "James", "Peter", "Paul"],
+  },
+  {
+    question: "Which book comes after the Gospel of John?",
+    correctAnswer: "Acts",
+    options: ["Acts", "Romans", "Luke", "Revelation"],
+  },
+  {
+    question: "What is the last book of the Bible?",
+    correctAnswer: "Revelation",
+    options: ["Revelation", "Jude", "Malachi", "Romans"],
+  },
+];
+
+const bibleSpeedQuestions: MultipleChoiceQuestion[] = [
+  {
+    question: "Which reference says, 'The Lord is my shepherd'?",
+    correctAnswer: "Psalm 23:1",
+    options: ["Psalm 23:1", "Psalm 46:10", "John 3:16", "Romans 8:28"],
+  },
+  {
+    question: "Which reference says, 'Jesus wept'?",
+    correctAnswer: "John 11:35",
+    options: ["John 11:35", "Luke 2:52", "Mark 1:1", "Acts 2:42"],
+  },
+  {
+    question: "Which reference says, 'I can do all things through Christ'?",
+    correctAnswer: "Philippians 4:13",
+    options: ["Philippians 4:13", "Ephesians 6:10", "Romans 12:2", "James 1:5"],
+  },
+  {
+    question: "Which reference says, 'Be still, and know that I am God'?",
+    correctAnswer: "Psalm 46:10",
+    options: ["Psalm 46:10", "Psalm 1:1", "Proverbs 3:5", "Isaiah 40:31"],
+  },
+  {
+    question: "Which reference says, 'For God so loved the world'?",
+    correctAnswer: "John 3:16",
+    options: ["John 3:16", "John 1:1", "Romans 5:8", "1 John 4:8"],
+  },
+  {
+    question: "Which reference says, 'Trust in the Lord with all your heart'?",
+    correctAnswer: "Proverbs 3:5",
+    options: ["Proverbs 3:5", "Psalm 119:11", "Joshua 1:9", "Matthew 6:33"],
+  },
+  {
+    question: "Which reference says, 'Seek first his kingdom'?",
+    correctAnswer: "Matthew 6:33",
+    options: ["Matthew 6:33", "Matthew 5:9", "Luke 15:7", "John 14:6"],
+  },
+  {
+    question: "Which reference says, 'Do not conform to the pattern of this world'?",
+    correctAnswer: "Romans 12:2",
+    options: ["Romans 12:2", "Romans 8:1", "Galatians 5:22", "Colossians 3:23"],
+  },
+  {
+    question: "Which reference says, 'Love is patient, love is kind'?",
+    correctAnswer: "1 Corinthians 13:4",
+    options: ["1 Corinthians 13:4", "2 Corinthians 5:17", "1 John 3:16", "Hebrews 11:1"],
+  },
+  {
+    question: "Which reference says, 'In the beginning God created'?",
+    correctAnswer: "Genesis 1:1",
+    options: ["Genesis 1:1", "Exodus 1:1", "John 1:1", "Psalm 1:1"],
+  },
+  {
+    question: "Which reference says, 'The Lord is my light and my salvation'?",
+    correctAnswer: "Psalm 27:1",
+    options: ["Psalm 27:1", "Psalm 91:1", "Psalm 121:1", "Psalm 139:14"],
+  },
+  {
+    question: "Which reference says, 'Your word is a lamp for my feet'?",
+    correctAnswer: "Psalm 119:105",
+    options: ["Psalm 119:105", "Psalm 100:4", "Psalm 34:8", "Psalm 19:1"],
+  },
+  {
+    question: "Which reference says, 'Faith is confidence in what we hope for'?",
+    correctAnswer: "Hebrews 11:1",
+    options: ["Hebrews 11:1", "James 2:17", "Romans 10:17", "Ephesians 2:8"],
+  },
+  {
+    question: "Which reference says, 'The fruit of the Spirit is love, joy, peace'?",
+    correctAnswer: "Galatians 5:22",
+    options: ["Galatians 5:22", "Ephesians 4:29", "Colossians 3:12", "Romans 5:5"],
+  },
+  {
+    question: "Which reference says, 'Put on the full armour of God'?",
+    correctAnswer: "Ephesians 6:11",
+    options: ["Ephesians 6:11", "Ephesians 2:10", "Philippians 2:5", "1 Timothy 4:12"],
+  },
+  {
+    question: "Which reference says, 'Let no one despise your youth'?",
+    correctAnswer: "1 Timothy 4:12",
+    options: ["1 Timothy 4:12", "2 Timothy 1:7", "Titus 2:7", "1 Peter 3:15"],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -253,6 +476,18 @@ export const legacyBibleSpeedChallenges = [
   "Race: Find and read Ephesians 6:10-11 first.",
   "Race: Find and read Genesis 1:1 first — sounds easy, don't fumble.",
   "Race: Find and read Revelation 21:4 first.",
+  "Race: Find and read Psalm 119:105 first.",
+  "Race: Find and read Galatians 5:22-23 first.",
+  "Race: Find and read Hebrews 11:1 first.",
+  "Race: Find and read 1 Timothy 4:12 first.",
+  "Race: Find and read Matthew 5:14 first.",
+  "Race: Find and read James 1:5 first.",
+  "Race: Find and read 2 Timothy 1:7 first.",
+  "Race: Find and read John 14:6 first.",
+  "Race: Find and read Romans 5:8 first.",
+  "Race: Find and read Colossians 3:23 first.",
+  "Race: Find and read 1 Peter 5:7 first.",
+  "Race: Find and read Micah 6:8 first.",
 ];
 
 // ---------------------------------------------------------------------------
@@ -268,6 +503,10 @@ const danceBattleChallenges = [
   "Slow-mo battle: Entire performance must be in exaggerated slow motion. Creativity wins.",
   "Style swap: Each team picks a ridiculous style (ballet, robot, grandpa) for the opponent to battle in.",
   "Team sync challenge: All members of each team must move in perfect unison for 15 seconds.",
+  "Chair-free musical statues: music stops, everyone freezes in a Bible-character pose. Host eliminates the wobblers.",
+  "Worship intro remix: teams create a 10-second walk-on move like they are entering a youth camp stage.",
+  "Bible scene dance-off: one team dances 'walls of Jericho', the other dances 'storm on the boat'. Host judges clarity and courage.",
+  "Invisible prop battle: each team must dance with an imaginary object chosen by the host.",
 ];
 
 // ---------------------------------------------------------------------------
@@ -281,6 +520,16 @@ const stealChallenges = [
   "If the pressure team wins, they steal 3 points from every other team simultaneously.",
   "Pressure team vs. host's pick. Winner takes 7 points. Loser gives up 3.",
   "Last-place team is the pressure team — this is their comeback duel. Steal window is wide open.",
+  "Steal Sprint: trailing team calls out any team above them. One Bible speed question decides a 6-point steal.",
+  "Receipt Check: the pressure team gets 20 seconds to explain why they deserve another team's points, then must win a quick challenge to take them.",
+  "Double Dare Steal: pressure team can attempt an easy task for +3 or a harder task for +8 from one rival.",
+  "Captain Snatch: leaders face a sudden-death quiz. Winner steals 5 from the loser.",
+  "Crowd Noise Steal: teams perform a 10-second hype chant. Host picks winner; winner steals 4 from any team.",
+  "Reverse Steal: the targeted rival can block the steal by answering first. If they miss, the pressure team takes 7.",
+  "Mercy Steal: last-place team gets one clean shot to steal 5 from first place. No penalty if they lose.",
+  "Risky Receipt: team may steal 10, but if they fail the challenge they give 5 to the target.",
+  "Tag-Team Theft: pressure team chooses one teammate and one rival teammate for a 2v2 mini challenge. Winner steals 6.",
+  "Bible Backup Steal: answer the first question for +3, then choose to stop or risk it for a 7-point steal.",
 ];
 
 // ---------------------------------------------------------------------------
@@ -297,8 +546,10 @@ function shuffle<T>(items: T[]): T[] {
 
 export function buildQuizQuestionSet(roundType: RoundType, count = 5): QuizQuestion[] {
   const timeLimitSeconds = roundType === "bible_speed" ? 20 : 15;
+  const questionBank =
+    roundType === "bible_speed" ? bibleSpeedQuestions : multipleChoiceQuestions;
 
-  return shuffle(multipleChoiceQuestions)
+  return shuffle(questionBank)
     .slice(0, count)
     .map((question, index) => ({
       id: `${roundType}-${index + 1}-${question.correctAnswer.toLowerCase().replace(/\W+/g, "-")}`,

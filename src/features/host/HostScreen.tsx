@@ -9,7 +9,9 @@ import { HostSetupPanel } from "./HostSetupPanel";
 import type { SyncState } from "../gameflow/gamePhases";
 import type {
   AnswerSubmission,
+  PlannedRound,
   Room,
+  RoundDefinition,
   RoundRecord,
   RoundType,
   ScoreEvent,
@@ -39,7 +41,7 @@ export type HostScreenProps = {
   setCustomTimerInput: (value: string) => void;
   soundEnabled: boolean;
   toggleSound: () => void;
-  startRound: (type?: RoundType) => void;
+  startRound: (type?: RoundType, definition?: RoundDefinition) => Promise<boolean>;
   lockVotes: () => void;
   applyScore: (teamId: string, delta: number, reason: string) => void;
   completeRound: () => void;
@@ -58,6 +60,15 @@ export type HostScreenProps = {
     endQuizRound: () => void;
     awardFastestCorrect: () => void;
     awardAllCorrect: () => void;
+  };
+  showModeActions: {
+    plannedRounds: PlannedRound[];
+    pendingShowAction: string | null;
+    canStartPlannedRound: boolean;
+    addPlannedRound: (roundType: RoundType) => void;
+    skipPlannedRound: (itemId?: string) => void;
+    movePlannedRound: (itemId: string, direction: -1 | 1) => void;
+    startNextPlannedRound: () => void;
   };
   updateTeamContent: (
     teamId: string,
@@ -168,6 +179,7 @@ export function HostScreen(props: HostScreenProps) {
             completeRound={props.completeRound}
             applyScore={props.applyScore}
             quizActions={props.quizActions}
+            showModeActions={props.showModeActions}
           />
 
           {isScoringRound && props.activeRound && (

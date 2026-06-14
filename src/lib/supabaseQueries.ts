@@ -3,7 +3,7 @@ import { normalizeTeam } from "../app/appHelpers";
 import { supabase } from "./supabase";
 import type { AnswerSubmission, Room, RoundRecord, ScoreEvent, Team, VoteRow } from "./types";
 
-export const roomColumns = "id,code,host_pin,status,created_at";
+export const roomColumns = "id,code,host_pin,status,planned_round_queue,created_at";
 export const teamColumns =
   "id,room_id,name,leader_code,score,joined_at,animal,avatar_emoji,avatar_image,color";
 export const roundColumns =

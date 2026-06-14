@@ -34,11 +34,17 @@ export type QuizQuestion = {
   points: number;
 };
 
+export type PlannedRound = RoundDefinition & {
+  id: string;
+  createdAt: string;
+};
+
 export type Room = {
   id: string;
   code: string;
   host_pin: string;
   status: string;
+  planned_round_queue?: PlannedRound[] | null;
   created_at?: string;
 };
 

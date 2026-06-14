@@ -23,6 +23,7 @@ import type {
   AnswerSubmission,
   Room,
   RoundRecord,
+  RoundDefinition,
   RoundStatus,
   RoundType,
   ScoreEvent,
@@ -219,13 +220,13 @@ export function useGameActions({
     }
   }
 
-  async function startRound(roundType?: RoundType) {
-    if (!room) return;
+  async function startRound(roundType?: RoundType, plannedDefinition?: RoundDefinition) {
+    if (!room) return false;
 
     setLoadError(null);
 
     try {
-      const definition = buildRoundDefinition(roundType);
+      const definition = plannedDefinition ?? buildRoundDefinition(roundType);
       const nextRoundNumber = (rounds[0]?.round_number ?? 0) + 1;
       const status: RoundStatus = definition.requiresVoting ? "voting" : "scoring";
       const selectedTimer =
@@ -292,10 +293,12 @@ export function useGameActions({
       setSelectedRoundType(definition.type);
       setShowWinner(false);
       sound.play("roundStart");
+      return true;
     } catch (error) {
       setLoadError(
         error instanceof Error ? error.message : "Unable to start the round."
       );
+      return false;
     }
   }
 

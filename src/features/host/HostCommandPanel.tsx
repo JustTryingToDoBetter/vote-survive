@@ -11,8 +11,10 @@ import { AnimatedVoteBar, ChallengeRevealCard } from "../audience/ProjectorStage
 import { TimerRing } from "../shared/TimerRing";
 import { QuizHostPanel } from "../quiz/QuizHostPanel";
 import { isRapidQuizRound } from "../quiz/quizEngine";
+import { HostShowModePanel } from "./HostShowModePanel";
 import type {
   AnswerSubmission,
+  PlannedRound,
   RoundDefinition,
   RoundRecord,
   RoundStatus,
@@ -38,7 +40,7 @@ type HostCommandPanelProps = {
   setTimerDuration: (value: number) => void;
   customTimerInput: string;
   setCustomTimerInput: (value: string) => void;
-  startRound: (type?: RoundType) => void;
+  startRound: (type?: RoundType, definition?: RoundDefinition) => Promise<boolean>;
   lockVotes: () => void;
   completeRound: () => void;
   applyScore: (teamId: string, delta: number, reason: string) => void;
@@ -50,6 +52,15 @@ type HostCommandPanelProps = {
     endQuizRound: () => void;
     awardFastestCorrect: () => void;
     awardAllCorrect: () => void;
+  };
+  showModeActions: {
+    plannedRounds: PlannedRound[];
+    pendingShowAction: string | null;
+    canStartPlannedRound: boolean;
+    addPlannedRound: (roundType: RoundType) => void;
+    skipPlannedRound: (itemId?: string) => void;
+    movePlannedRound: (itemId: string, direction: -1 | 1) => void;
+    startNextPlannedRound: () => void;
   };
 };
 
@@ -93,6 +104,18 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
         <StatusStrip label="Voting progress" value={`${voteProgress}%`} icon={<Vote size={18} />} />
         <StatusStrip label="Sync" value={formatSyncState(props.syncState)} icon={<TimerReset size={18} />} />
       </div>
+
+      <HostShowModePanel
+        plannedRounds={props.showModeActions.plannedRounds}
+        pendingShowAction={props.showModeActions.pendingShowAction}
+        canStartPlannedRound={props.showModeActions.canStartPlannedRound}
+        selectedRoundType={props.selectedRoundType}
+        setSelectedRoundType={props.setSelectedRoundType}
+        addPlannedRound={props.showModeActions.addPlannedRound}
+        skipPlannedRound={props.showModeActions.skipPlannedRound}
+        movePlannedRound={props.showModeActions.movePlannedRound}
+        startNextPlannedRound={props.showModeActions.startNextPlannedRound}
+      />
 
       <div className="stage-block">
         <div className="round-toolbar">
