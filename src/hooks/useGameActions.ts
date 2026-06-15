@@ -480,7 +480,12 @@ export function useGameActions({
     sound.play("reveal");
   }
 
-  async function applyScore(teamId: string, delta: number, reason: string) {
+  async function applyScore(
+    teamId: string,
+    delta: number,
+    reason: string,
+    dedupeKeyOverride?: string
+  ) {
     if (!room) return;
     if (scoringLocksRef.current[teamId]) return;
 
@@ -494,15 +499,17 @@ export function useGameActions({
     setScoringTeamIds((current) => ({ ...current, [teamId]: true }));
 
     try {
-      const dedupeKey = [
-        "score",
-        room.id,
-        activeRound?.id ?? "room",
-        teamId,
-        finalDelta,
-        reason,
-        crypto.randomUUID(),
-      ].join(":");
+      const dedupeKey =
+        dedupeKeyOverride ??
+        [
+          "score",
+          room.id,
+          activeRound?.id ?? "room",
+          teamId,
+          finalDelta,
+          reason,
+          crypto.randomUUID(),
+        ].join(":");
 
       const { data, error } = await supabase
         .rpc("apply_score_event", {
@@ -526,7 +533,12 @@ export function useGameActions({
           entry.id === teamId ? { ...entry, score: scoreRow.new_score } : entry
         )
       );
-      setScoreEvents((current) => [toScoreEvent(scoreRow), ...current]);
+      setScoreEvents((current) => {
+        const nextEvent = toScoreEvent(scoreRow);
+        return current.some((event) => event.id === nextEvent.id)
+          ? current.map((event) => (event.id === nextEvent.id ? nextEvent : event))
+          : [nextEvent, ...current];
+      });
       sound.play("score");
     } finally {
       scoringLocksRef.current[teamId] = false;

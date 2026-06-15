@@ -164,6 +164,7 @@ declare
   team_room_id uuid;
   question_count integer;
   quiz_status text;
+  active_question_index integer;
 begin
   if new.question_index < 0 then
     raise exception 'Question index must be zero or greater.';
@@ -178,8 +179,9 @@ begin
            when question_set is null then null
            else jsonb_array_length(question_set)
          end,
-         question_status
-  into round_room_id, question_count, quiz_status
+         question_status,
+         current_question_index
+  into round_room_id, question_count, quiz_status, active_question_index
   from public.rounds
   where id = new.round_id;
 
@@ -206,6 +208,10 @@ begin
 
     if quiz_status <> 'live' then
       raise exception 'This quiz question is not live.';
+    end if;
+
+    if new.question_index <> active_question_index then
+      raise exception 'This question is not the active question.';
     end if;
   end if;
 

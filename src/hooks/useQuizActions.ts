@@ -16,7 +16,12 @@ type UseQuizActionsArgs = {
   setRounds: Dispatch<SetStateAction<RoundRecord[]>>;
   setActiveRound: Dispatch<SetStateAction<RoundRecord | null>>;
   setLoadError: Dispatch<SetStateAction<string | null>>;
-  applyScore: (teamId: string, delta: number, reason: string) => Promise<void>;
+  applyScore: (
+    teamId: string,
+    delta: number,
+    reason: string,
+    dedupeKey?: string
+  ) => Promise<void>;
 };
 
 export function useQuizActions({
@@ -91,9 +96,15 @@ export function useQuizActions({
     if (!activeRound || pendingQuizAction) return;
     const fastest = getFastestCorrect(answerSubmissions, activeRound);
     if (!fastest) return;
+    const questionIndex = getCurrentQuestionIndex(activeRound);
     setPendingQuizAction("score-fastest");
     try {
-      await applyScore(fastest.team_id, 10, "Rapid quiz fastest correct");
+      await applyScore(
+        fastest.team_id,
+        10,
+        "Rapid quiz fastest correct",
+        `quiz:${activeRound.id}:${questionIndex}:${fastest.team_id}:fastest`
+      );
     } finally {
       setPendingQuizAction(null);
     }
@@ -101,13 +112,19 @@ export function useQuizActions({
 
   async function awardAllCorrect() {
     if (!activeRound || pendingQuizAction) return;
+    const questionIndex = getCurrentQuestionIndex(activeRound);
     const correctAnswers = getCurrentQuestionAnswers(answerSubmissions, activeRound).filter(
       (answer) => answer.is_correct
     );
     setPendingQuizAction("score-correct");
     try {
       for (const answer of correctAnswers) {
-        await applyScore(answer.team_id, 5, "Rapid quiz correct answer");
+        await applyScore(
+          answer.team_id,
+          5,
+          "Rapid quiz correct answer",
+          `quiz:${activeRound.id}:${questionIndex}:${answer.team_id}:all-correct`
+        );
       }
     } finally {
       setPendingQuizAction(null);
