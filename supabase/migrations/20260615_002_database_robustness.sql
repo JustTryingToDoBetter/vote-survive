@@ -213,6 +213,10 @@ begin
     if new.question_index <> active_question_index then
       raise exception 'This question is not the active question.';
     end if;
+
+    if tg_op = 'UPDATE' then
+      raise exception 'Quiz answers cannot be changed after submission.';
+    end if;
   end if;
 
   return new;

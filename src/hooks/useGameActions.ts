@@ -8,7 +8,11 @@ import {
   toLegacyRoundPayload,
   toRoundRecord,
 } from "../app/appHelpers";
-import { getCurrentQuestion, getCurrentQuestionIndex } from "../features/quiz/quizEngine";
+import {
+  getCurrentQuestion,
+  getCurrentQuestionIndex,
+  isRapidQuizRound,
+} from "../features/quiz/quizEngine";
 import { supabase } from "../lib/supabase";
 import {
   fetchRoomByCode,
@@ -304,6 +308,12 @@ export function useGameActions({
 
   async function submitVote(targetTeamId: string) {
     if (!activeRound || !leaderTeam || targetTeamId === leaderTeam.id) return;
+    if (
+      activeRound.status !== "voting" ||
+      (activeRound.round_type !== "voting" && activeRound.round_type !== "steal")
+    ) {
+      return;
+    }
     if (pendingVoteTargetId) return;
 
     const previousVotes = votesForLeader(votes, leaderTeam.id);
@@ -356,6 +366,9 @@ export function useGameActions({
   async function submitAnswer(answer: string) {
     if (!activeRound || !leaderTeam) return;
 
+    const rapidQuiz = isRapidQuizRound(activeRound);
+    if (rapidQuiz && activeRound.question_status !== "live") return;
+
     const currentQuestion = getCurrentQuestion(activeRound);
     const correctAnswer = currentQuestion?.correctAnswer ?? activeRound.correct_answer;
     if (!correctAnswer) return;
@@ -373,6 +386,8 @@ export function useGameActions({
           submission.round_id === activeRound.id &&
           submission.question_index === questionIndex
       ) ?? null;
+    if (rapidQuiz && previousSubmission) return;
+
     const optimistic = {
       id: previousSubmission?.id ?? `optimistic-answer-${leaderTeam.id}-${questionIndex}`,
       round_id: activeRound.id,
@@ -633,6 +648,7 @@ export function useGameActions({
 
       if (roundIds.length > 0) {
         await supabase.from("votes").delete().in("round_id", roundIds);
+        await supabase.from("answer_submissions").delete().in("round_id", roundIds);
       }
 
       await supabase.from("score_events").delete().eq("room_id", room.id);
@@ -643,6 +659,7 @@ export function useGameActions({
       await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
       setShowWinner(false);
       setVotes([]);
+      setAnswerSubmissions([]);
       setRounds([]);
       setActiveRound(null);
       setScoreEvents([]);

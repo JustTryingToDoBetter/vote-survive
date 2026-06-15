@@ -248,6 +248,7 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
             endQuizRound={props.quizActions.endQuizRound}
             awardFastestCorrect={props.quizActions.awardFastestCorrect}
             awardAllCorrect={props.quizActions.awardAllCorrect}
+            pendingQuizAction={props.quizActions.pendingQuizAction}
           />
         )}
 

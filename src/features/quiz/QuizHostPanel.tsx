@@ -18,6 +18,7 @@ type QuizHostPanelProps = {
   endQuizRound: () => void;
   awardFastestCorrect: () => void;
   awardAllCorrect: () => void;
+  pendingQuizAction: string | null;
 };
 
 export function QuizHostPanel(props: QuizHostPanelProps) {
@@ -25,9 +26,13 @@ export function QuizHostPanel(props: QuizHostPanelProps) {
   const questionIndex = getCurrentQuestionIndex(props.round);
   const answers = getCurrentQuestionAnswers(props.submissions, props.round);
   const fastestCorrect = getFastestCorrect(props.submissions, props.round);
+  const correctAnswers = answers.filter((answer) => answer.is_correct);
   const answeredTeamIds = new Set(answers.map((answer) => answer.team_id));
   const waitingTeams = props.teams.filter((team) => !answeredTeamIds.has(team.id));
   const status = props.round.question_status ?? "waiting";
+  const scoringFastest = props.pendingQuizAction === "score-fastest";
+  const scoringCorrect = props.pendingQuizAction === "score-correct";
+  const scoringPending = scoringFastest || scoringCorrect;
 
   if (!question) return null;
 
@@ -94,12 +99,20 @@ export function QuizHostPanel(props: QuizHostPanelProps) {
 
       {status === "locked" && (
         <div className="quiz-command-row">
-          <button className="primary-btn" onClick={props.awardFastestCorrect} disabled={!fastestCorrect}>
+          <button
+            className="primary-btn"
+            onClick={props.awardFastestCorrect}
+            disabled={!fastestCorrect || scoringPending}
+          >
             <Trophy size={18} />
-            Award fastest +10
+            {scoringFastest ? "Awarding fastest..." : "Award fastest +10"}
           </button>
-          <button className="ghost-btn" onClick={props.awardAllCorrect}>
-            Award all correct +5
+          <button
+            className="ghost-btn"
+            onClick={props.awardAllCorrect}
+            disabled={correctAnswers.length === 0 || scoringPending}
+          >
+            {scoringCorrect ? "Awarding correct..." : "Award all correct +5"}
           </button>
         </div>
       )}

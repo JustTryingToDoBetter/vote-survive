@@ -34,9 +34,7 @@ export function LeaderScreen(props: LeaderScreenProps) {
   const voteOpen = Boolean(
     props.activeRound &&
       isVoteRound &&
-      !props.activeRound.target_team_id &&
-      props.activeRound.status !== "complete" &&
-      props.activeRound.status !== "winner"
+      props.activeRound.status === "voting"
   );
   const answerOpen = Boolean(
     props.activeRound?.answer_options?.length &&
