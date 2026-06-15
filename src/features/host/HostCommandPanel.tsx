@@ -95,6 +95,15 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
       }
     : null;
   const isQuizRound = isRapidQuizRound(props.activeRound);
+  const isVoteRound =
+    props.activeRound?.round_type === "voting" ||
+    props.activeRound?.round_type === "steal";
+  const shouldShowVoteStatus = Boolean(
+    props.activeRound &&
+      isVoteRound &&
+      props.activeRound.status !== "complete" &&
+      props.activeRound.status !== "winner"
+  );
 
   return (
     <section className="host-panel host-run-game">
@@ -202,16 +211,18 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
               ))}
             </div>
 
-            <VoteStatusPanel
-              teams={props.teams}
-              votes={props.votes}
-              revealVotes={props.activeRound.status !== "voting"}
-            />
-
             <button className="danger-btn" onClick={props.lockVotes}>
               Lock votes and reveal pressure team
             </button>
           </div>
+        )}
+
+        {shouldShowVoteStatus && props.activeRound && (
+          <VoteStatusPanel
+            teams={props.teams}
+            votes={props.votes}
+            revealVotes={props.activeRound.status !== "voting"}
+          />
         )}
 
         {props.activeRound && props.activeRound.status !== "voting" && !isQuizRound && (
