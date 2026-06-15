@@ -33,10 +33,10 @@ begin
       and rel.relname = 'answer_submissions'
       and con.contype = 'u'
       and (
-        select array_agg(att.attname order by ord.ordinality)
+        select array_agg(att.attname::text order by ord.ordinality)
         from unnest(con.conkey) with ordinality as ord(attnum, ordinality)
         join pg_attribute att on att.attrelid = con.conrelid and att.attnum = ord.attnum
-      ) = array['round_id', 'team_id']
+      ) = array['round_id', 'team_id']::text[]
   loop
     execute format('alter table public.answer_submissions drop constraint %I', constraint_name);
   end loop;
