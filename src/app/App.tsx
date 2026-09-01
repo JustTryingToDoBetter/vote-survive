@@ -243,14 +243,30 @@ export default function App() {
   }, [session.activeRound, session.activeRound?.status, secondsLeft, sound]);
 
   useEffect(() => {
-    if (!session.activeRound || session.activeRound.status !== "voting" || secondsLeft > 0) {
-      return;
-    }
-    if (autoLockingRoundRef.current === session.activeRound.id) return;
+  if (
+    !session.activeRound ||
+    session.activeRound.status !== "voting" ||
+    secondsLeft > 0
+  ) {
+    return;
+  }
 
-    autoLockingRoundRef.current = session.activeRound.id;
-    void actions.lockVotes();
-  }, [actions, secondsLeft, session.activeRound]);
+  if (
+    autoLockingRoundRef.current ===
+    session.activeRound.id
+  ) {
+    return;
+  }
+
+  autoLockingRoundRef.current =
+    session.activeRound.id;
+
+  void actions.lockVotes();
+}, [
+  actions,
+  secondsLeft,
+  session.activeRound,
+]);
 
   useEffect(() => {
     const round = session.activeRound;

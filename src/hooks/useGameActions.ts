@@ -589,45 +589,72 @@ export function useGameActions({
     sound.play(isCorrect ? "score" : "voteSubmit");
   }
 
-  async function lockVotes() {
-    if (!activeRound) return;
-    if (activeRound.status !== "voting" && activeRound.status !== "live") return;
+  async function lockVotes(): Promise<
+  "locked" | "blocked" | "retry"
+> {
+  if (!activeRound) {
+    return "blocked";
+  }
 
-    let targetTeamId = activeRound.target_team_id;
-    let rivalTeamId = activeRound.rival_team_id ?? null;
+  if (
+    activeRound.status !== "voting" &&
+    activeRound.status !== "live"
+  ) {
+    return "blocked";
+  }
 
-    if (activeRound.status === "voting") {
-      const voteOutcome = getVoteOutcome(sortedVoteCounts);
+  let targetTeamId = activeRound.target_team_id;
+  let rivalTeamId =
+    activeRound.rival_team_id ?? null;
 
-      if (voteOutcome.kind === "no_votes") {
-        setLoadError("No votes were submitted. Keep voting open or choose another round.");
-        return;
-      }
+  if (activeRound.status === "voting") {
+    const voteOutcome =
+      getVoteOutcome(sortedVoteCounts);
 
-      if (voteOutcome.kind === "tie") {
-        const names = voteOutcome.teams.map((team) => team.name).join(", ");
-        setLoadError(
-          `Vote tied at ${voteOutcome.count} between ${names}. Keep voting open and run a revote or sudden-death tiebreak.`
-        );
-        return;
-      }
+    if (voteOutcome.kind === "no_votes") {
+      setLoadError(
+        "No votes were submitted. Keep voting open or choose another round."
+      );
 
-      targetTeamId = voteOutcome.team.id;
-      setLoadError(null);
+      return "blocked";
     }
 
-    const config = getChallengeConfig(activeRound);
-    if (targetTeamId && requiresRival(config)) {
-      rivalTeamId =
-        chooseAutomaticRival({
-          config,
-          targetTeamId,
-          teams,
-          voteCounts: sortedVoteCounts,
-        })?.id ?? null;
+    if (voteOutcome.kind === "tie") {
+      const names = voteOutcome.teams
+        .map((team) => team.name)
+        .join(", ");
+
+      setLoadError(
+        `Vote tied at ${voteOutcome.count} between ${names}. Keep voting open and run a revote or sudden-death tiebreak.`
+      );
+
+      return "blocked";
     }
 
-    const hostSupabase = getHostSupabase();
+    targetTeamId = voteOutcome.team.id;
+    setLoadError(null);
+  }
+
+  const config =
+    getChallengeConfig(activeRound);
+
+  if (
+    targetTeamId &&
+    requiresRival(config)
+  ) {
+    rivalTeamId =
+      chooseAutomaticRival({
+        config,
+        targetTeamId,
+        teams,
+        voteCounts: sortedVoteCounts,
+      })?.id ?? null;
+  }
+
+  try {
+    const hostSupabase =
+      getHostSupabase();
+
     const { error } = await hostSupabase
       .from("rounds")
       .update({
@@ -639,7 +666,7 @@ export function useGameActions({
 
     if (error) {
       setLoadError(error.message);
-      return;
+      return "retry";
     }
 
     const patch = {
@@ -647,16 +674,35 @@ export function useGameActions({
       target_team_id: targetTeamId,
       rival_team_id: rivalTeamId,
     };
+
     setActiveRound((current) =>
-      current?.id === activeRound.id ? { ...current, ...patch } : current
+      current?.id === activeRound.id
+        ? { ...current, ...patch }
+        : current
     );
+
     setRounds((current) =>
       current.map((round) =>
-        round.id === activeRound.id ? { ...round, ...patch } : round
+        round.id === activeRound.id
+          ? { ...round, ...patch }
+          : round
       )
     );
+
     sound.play("reveal");
+
+    return "locked";
+  } catch (error) {
+    setLoadError(
+      getErrorMessage(
+        error,
+        "Unable to lock the round."
+      )
+    );
+
+    return "retry";
   }
+}
 
   async function openScoring() {
     if (!activeRound || activeRound.status !== "locked") return;

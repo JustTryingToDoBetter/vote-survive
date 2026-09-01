@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildQuizQuestionSet } from "./gameContent";
+import { LIVE_SYNC_INTERVAL_MS } from "../lib/sessionConfig";
 
 describe("buildQuizQuestionSet", () => {
   it("adds quiz metadata and 15 second limits to quiz burst questions", () => {
@@ -24,5 +25,9 @@ describe("buildQuizQuestionSet", () => {
       expect(question.timeLimitSeconds).toBe(20);
       expect(question.points).toBe(5);
     }
+  });
+
+  it("uses a slower polling fallback so realtime handles most sync traffic", () => {
+    expect(LIVE_SYNC_INTERVAL_MS).toBe(20000);
   });
 });

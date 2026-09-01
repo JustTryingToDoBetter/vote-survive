@@ -125,6 +125,39 @@ export async function fetchScores(roomId: string) {
   return (data ?? []) as ScoreEvent[];
 }
 
+export async function fetchBootstrapRoomState(roomId: string) {
+  const { data, error } = await supabase.rpc("bootstrap_room_state", {
+    p_room_id: roomId,
+  });
+
+  if (error) throw error;
+
+  const payload = (data ?? {}) as {
+    room?: Room | null;
+    teams?: Team[];
+    rounds?: Record<string, unknown>[];
+    activeRound?: Record<string, unknown> | null;
+    votes?: VoteRow[];
+    answers?: Record<string, unknown>[];
+  };
+
+  const rounds = (payload.rounds ?? []).map((row) => toRoundRecord(row));
+  const activeRound = payload.activeRound
+    ? toRoundRecord(payload.activeRound)
+    : getActiveRound(rounds);
+
+  return {
+    room: (payload.room ?? null) as Room | null,
+    teams: (payload.teams ?? []).map((team: Team, index: number) =>
+      normalizeTeam(team, index)
+    ),
+    rounds,
+    activeRound,
+    votes: (payload.votes ?? []) as VoteRow[],
+    answers: (payload.answers ?? []).map((row) => mapAnswerSubmission(row)),
+  };
+}
+
 export function getActiveRound(rounds: RoundRecord[]) {
   return rounds[0] ?? null;
 }

@@ -4,6 +4,7 @@ import { LIVE_SYNC_INTERVAL_MS, REALTIME_DEBOUNCE_MS } from "../lib/sessionConfi
 import { supabase } from "../lib/supabase";
 import {
   fetchAnswers,
+  fetchBootstrapRoomState,
   fetchRoom,
   fetchRoomByCode,
   fetchRounds,
@@ -193,14 +194,27 @@ export function useRoomSession({
         setSyncState((current) => ({ ...current, isSyncing: true }));
         setLoadError(null);
 
-        const [roomRow, teamRows, roundRows, scoreRows] = await Promise.all([
+        const bootstrap = await fetchBootstrapRoomState(roomId).catch(() => null);
+
+        if (requestId !== refreshSequenceRef.current) return;
+
+        if (bootstrap) {
+          setRoom(bootstrap.room ?? null);
+          setTeams(bootstrap.teams);
+          setRounds(bootstrap.rounds);
+          setActiveRound(bootstrap.activeRound);
+          setVotes(bootstrap.votes);
+          setAnswerSubmissions(bootstrap.answers);
+          setScoreEvents([]);
+          markSynced(startedAt);
+          return;
+        }
+
+        const [roomRow, teamRows, roundRows] = await Promise.all([
           fetchRoom(roomId),
           fetchTeams(roomId),
           fetchRounds(roomId),
-          fetchScores(roomId).catch(() => []),
         ]);
-
-        if (requestId !== refreshSequenceRef.current) return;
 
         const currentRound = getActiveRound(roundRows);
         const [voteRows, answerRows] = currentRound
@@ -215,7 +229,7 @@ export function useRoomSession({
         setActiveRound(currentRound);
         setVotes(voteRows);
         setAnswerSubmissions(answerRows);
-        setScoreEvents(scoreRows);
+        setScoreEvents([]);
         markSynced(startedAt);
       } catch (error) {
         setSyncState((current) => ({ ...current, isSyncing: false }));
@@ -363,7 +377,7 @@ export function useRoomSession({
     if (!room?.id) return;
     const roomId = room.id;
 
-    const channel = supabase
+    supabase
       .channel(`room-${roomId}`)
       .on(
         "postgres_changes",
@@ -426,15 +440,49 @@ export function useRoomSession({
           if (payload.eventType !== "DELETE") setRoom(payload.new as Room);
         }
       )
-      .subscribe();
+      .subscribe(
+  (
+    status:
+      | "SUBSCRIBED"
+      | "TIMED_OUT"
+      | "CLOSED"
+      | "CHANNEL_ERROR"
+  ) => {
+    if (status === "SUBSCRIBED") {
+      queueRoomRefresh(roomId, 0);
+      return;
+    }
+
+    if (
+      status === "CHANNEL_ERROR" ||
+      status === "TIMED_OUT"
+    ) {
+      setSyncState((current) => ({
+        ...current,
+        isSyncing: false,
+      }));
+
+      window.setTimeout(() => {
+        queueRoomRefresh(roomId, 0);
+      }, 1000);
+    }
+  }
+);
 
     const pollTimer = window.setInterval(() => {
-      queueRoomRefresh(roomId, 0);
-    }, LIVE_SYNC_INTERVAL_MS);
+  if (!navigator.onLine) return;
+
+  if (
+    document.visibilityState !== "visible"
+  ) {
+    return;
+  }
+
+  queueRoomRefresh(roomId, 0);
+}, LIVE_SYNC_INTERVAL_MS);
 
     return () => {
       window.clearInterval(pollTimer);
-      void supabase.removeChannel(channel);
     };
   }, [queueRoomRefresh, refreshRoomData, room?.id]);
 
@@ -487,13 +535,71 @@ export function useRoomSession({
           );
         }
       )
-      .subscribe();
+      .subscribe(
+        (
+          status:
+            | "SUBSCRIBED"
+            | "TIMED_OUT"
+            | "CLOSED"
+            | "CHANNEL_ERROR"
+        ) => {
+          if (status === "SUBSCRIBED") {
+            void refreshVotes(activeRound.id);
+            void refreshAnswers(activeRound.id);
+            return;
+          }
+
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            window.setTimeout(() => {
+              void refreshVotes(activeRound.id);
+              void refreshAnswers(activeRound.id);
+            }, 1000);
+          }
+        }
+      );
 
     return () => {
       void supabase.removeChannel(channel);
     };
   }, [activeRound?.id, refreshAnswers, refreshVotes]);
 
+  useEffect(() => {
+  if (!room?.id) return;
+
+  const roomId = room.id;
+
+  function recoverSession() {
+    queueRoomRefresh(roomId, 0);
+  }
+
+  function handleOnline() {
+    recoverSession();
+  }
+
+  function handleVisibilityChange() {
+    if (document.visibilityState === "visible") {
+      recoverSession();
+    }
+  }
+
+  window.addEventListener("online", handleOnline);
+  document.addEventListener(
+    "visibilitychange",
+    handleVisibilityChange
+  );
+
+  return () => {
+    window.removeEventListener(
+      "online",
+      handleOnline
+    );
+
+    document.removeEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+  };
+}, [queueRoomRefresh, room?.id]);
   useEffect(() => {
     return () => {
       if (refreshTimerRef.current) {
