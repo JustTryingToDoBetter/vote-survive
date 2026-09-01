@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Check, Play, Settings, Sparkles, TimerReset, Trophy, Users, Vote } from "lucide-react";
+import { Play, Settings, Sparkles, TimerReset, Trophy, Users, Vote } from "lucide-react";
 import type React from "react";
 import { roundTypeLabels } from "../../data/gameContent";
 import {
@@ -11,6 +11,7 @@ import { AnimatedVoteBar, ChallengeRevealCard } from "../audience/ProjectorStage
 import { TimerRing } from "../shared/TimerRing";
 import { QuizHostPanel } from "../quiz/QuizHostPanel";
 import { isRapidQuizRound } from "../quiz/quizEngine";
+import { ChallengeControlPanel } from "../challenge/ChallengeControlPanel";
 import { HostShowModePanel } from "./HostShowModePanel";
 import type {
   AnswerSubmission,
@@ -42,16 +43,19 @@ type HostCommandPanelProps = {
   setCustomTimerInput: (value: string) => void;
   startRound: (type?: RoundType, definition?: RoundDefinition) => Promise<boolean>;
   lockVotes: () => void;
+  setRivalTeam: (teamId: string) => void;
+  resolveChallenge: (winnerTeamId: string) => void;
+  pendingChallengeAction: string | null;
   completeRound: () => void;
   applyScore: (teamId: string, delta: number, reason: string) => void;
   quizActions: {
     pendingQuizAction: string | null;
     startQuestion: () => void;
     lockQuestion: () => void;
+    revealAnswer: () => void;
     nextQuestion: () => void;
     endQuizRound: () => void;
-    awardFastestCorrect: () => void;
-    awardAllCorrect: () => void;
+    awardQuestionScores: () => void;
   };
   showModeActions: {
     plannedRounds: PlannedRound[];
@@ -159,12 +163,8 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
         {!canStartRound && (
           <div className="round-blocked-row">
             <p className="muted-text">
-              A round is still active. Close it to choose the next round.
+              A round is still active. Use the run-of-show control above to move it forward.
             </p>
-            <button className="ghost-btn" onClick={props.completeRound}>
-              <Check size={18} />
-              Close current round
-            </button>
           </div>
         )}
         <TimerControls
@@ -225,35 +225,53 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
           />
         )}
 
-        {props.activeRound && props.activeRound.status !== "voting" && !isQuizRound && (
+        {props.activeRound &&
+          ["live", "locked", "scoring"].includes(props.activeRound.status) &&
+          !isQuizRound && (
           <ChallengeRevealCard
             round={props.activeRound}
             targetTeam={props.targetTeam}
             rivalTeam={props.rivalTeam}
           />
         )}
+
+        {props.activeRound &&
+          ["locked", "scoring"].includes(props.activeRound.status) &&
+          !isQuizRound && (
+            <ChallengeControlPanel
+              round={props.activeRound}
+              teams={props.teams}
+              targetTeam={props.targetTeam}
+              rivalTeam={props.rivalTeam}
+              pendingAction={props.pendingChallengeAction}
+              setRivalTeam={props.setRivalTeam}
+              resolveChallenge={props.resolveChallenge}
+            />
+          )}
       </div>
 
       {props.activeRound &&
         isQuizRound &&
-        props.activeRound.status !== "complete" &&
-        props.activeRound.status !== "winner" && (
+        props.activeRound.status === "live" && (
           <QuizHostPanel
             round={props.activeRound}
             teams={props.teams}
             submissions={props.answerSubmissions}
+            secondsLeft={props.secondsLeft}
             startQuestion={props.quizActions.startQuestion}
             lockQuestion={props.quizActions.lockQuestion}
+            revealAnswer={props.quizActions.revealAnswer}
             nextQuestion={props.quizActions.nextQuestion}
             endQuizRound={props.quizActions.endQuizRound}
-            awardFastestCorrect={props.quizActions.awardFastestCorrect}
-            awardAllCorrect={props.quizActions.awardAllCorrect}
+            awardQuestionScores={props.quizActions.awardQuestionScores}
             pendingQuizAction={props.quizActions.pendingQuizAction}
           />
         )}
 
       {props.activeRound &&
         !isQuizRound &&
+        props.activeRound.status !== "reveal" &&
+        props.activeRound.status !== "lobby" &&
         props.activeRound.status !== "complete" &&
         props.activeRound.status !== "winner" && (
           <AnswerRacePanel

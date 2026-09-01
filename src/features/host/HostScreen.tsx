@@ -42,7 +42,12 @@ export type HostScreenProps = {
   soundEnabled: boolean;
   toggleSound: () => void;
   startRound: (type?: RoundType, definition?: RoundDefinition) => Promise<boolean>;
+  beginRound: () => void;
   lockVotes: () => void;
+  openScoring: () => void;
+  setRivalTeam: (teamId: string) => void;
+  resolveChallenge: (winnerTeamId: string) => void;
+  pendingChallengeAction: string | null;
   applyScore: (teamId: string, delta: number, reason: string) => void;
   completeRound: () => void;
   undoLastScore: () => void;
@@ -56,10 +61,10 @@ export type HostScreenProps = {
     pendingQuizAction: string | null;
     startQuestion: () => void;
     lockQuestion: () => void;
+    revealAnswer: () => void;
     nextQuestion: () => void;
     endQuizRound: () => void;
-    awardFastestCorrect: () => void;
-    awardAllCorrect: () => void;
+    awardQuestionScores: () => void;
   };
   showModeActions: {
     plannedRounds: PlannedRound[];
@@ -101,10 +106,7 @@ export function HostScreen(props: HostScreenProps) {
     !props.activeRound ||
     props.activeRound.status === "complete" ||
     props.activeRound.status === "winner";
-  const isScoringRound =
-    props.activeRound &&
-    props.activeRound.status !== "complete" &&
-    props.activeRound.status !== "winner";
+  const isScoringRound = props.activeRound?.status === "scoring";
 
   return (
     <motion.main
@@ -149,7 +151,9 @@ export function HostScreen(props: HostScreenProps) {
         activeRound={props.activeRound}
         showWinner={props.showWinner}
         startRound={() => props.startRound()}
+        beginRound={props.beginRound}
         lockVotes={props.lockVotes}
+        openScoring={props.openScoring}
         completeRound={props.completeRound}
         revealWinner={props.revealWinner}
         resetGame={props.resetGame}
@@ -176,6 +180,9 @@ export function HostScreen(props: HostScreenProps) {
             setCustomTimerInput={props.setCustomTimerInput}
             startRound={props.startRound}
             lockVotes={props.lockVotes}
+            setRivalTeam={props.setRivalTeam}
+            resolveChallenge={props.resolveChallenge}
+            pendingChallengeAction={props.pendingChallengeAction}
             completeRound={props.completeRound}
             applyScore={props.applyScore}
             quizActions={props.quizActions}

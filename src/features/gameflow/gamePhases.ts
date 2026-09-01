@@ -40,7 +40,7 @@ export const hostPhaseLabels: Record<HostPhase, string> = {
 export const hostPrimaryActionLabels: Record<HostPhase, string> = {
   lobby: "Start Round",
   round_reveal: "Start Round",
-  voting: "Lock Votes",
+  voting: "Lock Round",
   locked: "Open Scoring",
   scoring: "Complete Round",
   leaderboard: "Start Next Round",
@@ -74,7 +74,8 @@ export function getHostPhase(
 
   if (!activeRound) return "lobby";
 
-  if (activeRound.status === "voting") return "voting";
+  if (activeRound.status === "reveal" || activeRound.status === "lobby") return "round_reveal";
+  if (activeRound.status === "voting" || activeRound.status === "live") return "voting";
   if (activeRound.status === "locked") return "locked";
   if (activeRound.status === "scoring") return "scoring";
   if (activeRound.status === "complete") return "leaderboard";
@@ -91,10 +92,12 @@ export function getProjectorState(
     return "Winner reveal";
   }
   if (!activeRound) return "Waiting for host";
+  if (activeRound.status === "reveal" || activeRound.status === "lobby") return "Round reveal";
   if (activeRound.status === "voting") return "Voting open";
+  if (activeRound.status === "live") return "Task live";
   if (activeRound.status === "locked") return "Votes locked";
-  if (activeRound.status === "scoring") return "Challenge revealed";
-  if (activeRound.status === "complete") return "Scoring";
+  if (activeRound.status === "scoring") return "Scoring";
+  if (activeRound.status === "complete") return "Leaderboard";
   return "Round starting";
 }
 

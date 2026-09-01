@@ -870,6 +870,20 @@ textarea {
   box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.16);
 }
 
+.answer-option.is-correct {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18);
+}
+
+.answer-option.is-wrong {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.16);
+}
+
+.answer-option.is-correct.is-selected {
+  border-color: #22c55e;
+}
+
 .vote-tile strong,
 .answer-option strong {
   font-size: clamp(1.2rem, 5vw, 2rem);

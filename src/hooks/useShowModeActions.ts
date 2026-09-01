@@ -1,6 +1,6 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { buildRoundDefinition } from "../data/gameContent";
-import { supabase } from "../lib/supabase";
+import { getHostSupabase } from "../lib/supabase";
 import { roomColumns } from "../lib/supabaseQueries";
 import type { PlannedRound, Room, RoundDefinition, RoundRecord, RoundType } from "../lib/types";
 
@@ -71,7 +71,8 @@ export function useShowModeActions({
     );
 
     try {
-      const { data, error } = await supabase
+      const hostSupabase = getHostSupabase();
+      const { data, error } = await hostSupabase
         .from("rooms")
         .update({ planned_round_queue: nextQueue })
         .eq("id", room.id)

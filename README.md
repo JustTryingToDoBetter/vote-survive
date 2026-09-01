@@ -16,8 +16,8 @@ Vote Survive is a live youth-room game show app for team nights. A host runs rou
 - Create a room from the home screen.
 - Share the room code and team codes.
 - Open the game screen or leaderboard on a projector.
-- Use the run-of-show flow: Lobby, Round Reveal, Voting / Task Live, Locked, Scoring, Leaderboard, Final Reveal.
-- Use one primary action at a time: start round, lock votes, complete round, start next round, or reveal/reset final results.
+- Use the run-of-show flow: Lobby → Round Reveal → Voting / Task Live → Locked → Scoring → Leaderboard → Final Reveal.
+- Use one primary action at a time: create/reveal the round, start it, lock it, open scoring, complete it, then start the next round or reveal the winner.
 - Score teams with presets or custom values. Final double rounds automatically double scoring.
 
 ## Leader Flow

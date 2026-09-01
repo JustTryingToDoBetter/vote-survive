@@ -5,7 +5,11 @@ import {
   getCurrentQuestionAnswers,
   getCurrentQuestionIndex,
   getFastestCorrect,
+  getQuizAwardPlan,
+  getQuizSecondsLeft,
   isLastQuizQuestion,
+  isQuizTimerExpired,
+  toPublicQuizQuestion,
 } from "./quizEngine";
 
 const questions: QuizQuestion[] = [
@@ -14,6 +18,8 @@ const questions: QuizQuestion[] = [
     prompt: "First question?",
     options: ["A", "B"],
     correctAnswer: "A",
+    category: "bible_knowledge",
+    difficulty: "easy",
     timeLimitSeconds: 15,
     points: 5,
   },
@@ -22,6 +28,8 @@ const questions: QuizQuestion[] = [
     prompt: "Second question?",
     options: ["C", "D"],
     correctAnswer: "D",
+    category: "bible_knowledge",
+    difficulty: "medium",
     timeLimitSeconds: 15,
     points: 5,
   },
@@ -43,6 +51,7 @@ function makeRound(patch: Partial<RoundRecord> = {}): RoundRecord {
     question_set: questions,
     current_question_index: 0,
     question_status: "live",
+    question_started_at: "2026-06-15T00:00:00.000Z",
     created_at: "2026-06-15T00:00:00.000Z",
     ...patch,
   };
@@ -114,6 +123,57 @@ describe("quizEngine", () => {
     ];
 
     expect(getFastestCorrect(answers, round)?.id).toBe("correct-fast");
+  });
+
+  it("removes answer keys from public quiz question payloads", () => {
+    const publicQuestion = toPublicQuizQuestion(questions[0]);
+
+    expect(publicQuestion).not.toHaveProperty("correctAnswer");
+    expect(publicQuestion.prompt).toBe("First question?");
+  });
+
+  it("counts down from the active question time limit", () => {
+    const round = makeRound();
+
+    expect(getQuizSecondsLeft(round, Date.parse("2026-06-15T00:00:05.000Z"))).toBe(10);
+    expect(getQuizSecondsLeft(round, Date.parse("2026-06-15T00:00:15.000Z"))).toBe(0);
+    expect(isQuizTimerExpired(round, Date.parse("2026-06-15T00:00:15.000Z"))).toBe(true);
+  });
+
+  it("does not run the timer before or after a live question", () => {
+    expect(getQuizSecondsLeft(makeRound({ question_status: "waiting" }))).toBe(0);
+    expect(getQuizSecondsLeft(makeRound({ question_status: "locked" }))).toBe(0);
+    expect(
+      getQuizSecondsLeft(makeRound({ question_status: "live", question_started_at: null }))
+    ).toBe(0);
+  });
+
+  it("awards +10 total to fastest correct and +5 to other correct teams", () => {
+    const answers = [
+      makeAnswer({
+        id: "wrong",
+        team_id: "team-wrong",
+        is_correct: false,
+        submitted_at: "2026-06-15T00:00:01.000Z",
+      }),
+      makeAnswer({
+        id: "second",
+        team_id: "team-second",
+        is_correct: true,
+        submitted_at: "2026-06-15T00:00:03.000Z",
+      }),
+      makeAnswer({
+        id: "fastest",
+        team_id: "team-fastest",
+        is_correct: true,
+        submitted_at: "2026-06-15T00:00:02.000Z",
+      }),
+    ];
+
+    expect(getQuizAwardPlan(answers, makeRound())).toEqual([
+      { teamId: "team-fastest", points: 10, role: "fastest" },
+      { teamId: "team-second", points: 5, role: "correct" },
+    ]);
   });
 
   it("detects the final quiz question", () => {

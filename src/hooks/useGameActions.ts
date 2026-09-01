@@ -2,6 +2,7 @@ import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { buildRoundDefinition } from "../data/gameContent";
 import {
   HOST_SESSION_KEY,
+  LEADER_SESSION_KEY,
   createDefaultDrafts,
   generateCode,
   normalizeTeam,
@@ -12,8 +13,17 @@ import {
   getCurrentQuestion,
   getCurrentQuestionIndex,
   isRapidQuizRound,
+  toPublicQuizQuestion,
 } from "../features/quiz/quizEngine";
-import { supabase } from "../lib/supabase";
+import { roundRequiresVoting } from "../features/gameflow/gamePhases";
+import {
+  challengeConfigForRoundType,
+  chooseAutomaticRival,
+  getChallengeConfig,
+  requiresChallengeResolution,
+  requiresRival,
+} from "../features/challenge/challengeEngine";
+import { createHostSupabase, getHostSupabase, supabase } from "../lib/supabase";
 import {
   fetchRoomByCode,
   fetchTeamByLeaderCode,
@@ -127,6 +137,7 @@ export function useGameActions({
   const [scoringTeamIds, setScoringTeamIds] = useState<Record<string, boolean>>({});
   const [pendingVoteTargetId, setPendingVoteTargetId] = useState<string | null>(null);
   const [pendingAnswerKey, setPendingAnswerKey] = useState<string | null>(null);
+  const [pendingChallengeAction, setPendingChallengeAction] = useState<string | null>(null);
   const scoringLocksRef = useRef<Record<string, boolean>>({});
 
   async function createRoom() {
@@ -136,8 +147,9 @@ export function useGameActions({
     try {
       const code = generateCode();
       const hostPin = generateCode(6);
+      const hostSupabase = createHostSupabase(hostPin);
 
-      const { data: createdRoom, error: roomError } = await supabase
+      const { data: createdRoom, error: roomError } = await hostSupabase
         .from("rooms")
         .insert({ code, host_pin: hostPin, status: "active" })
         .select(roomColumns)
@@ -145,7 +157,7 @@ export function useGameActions({
 
       if (roomError || !createdRoom) throw roomError ?? new Error("Room creation failed.");
 
-      const { data: createdTeams, error: teamsError } = await supabase
+      const { data: createdTeams, error: teamsError } = await hostSupabase
         .from("teams")
         .insert(
           createDefaultDrafts().map((team) => ({
@@ -193,25 +205,34 @@ export function useGameActions({
         teamCodeInput.trim().toUpperCase()
       );
 
-      const { error: joinedError } = await supabase
-        .from("teams")
-        .update({ joined_at: new Date().toISOString() })
-        .eq("id", foundTeam.id);
+      const joinedAt = new Date().toISOString();
+      const { error: joinedError } = await supabase.rpc("join_team_session", {
+        p_room_id: foundRoom.id,
+        p_team_id: foundTeam.id,
+        p_leader_code: teamCodeInput.trim().toUpperCase(),
+      });
 
-      if (joinedError && !joinedError.message.toLowerCase().includes("joined_at")) {
+      if (joinedError) {
         throw joinedError;
       }
 
       setRoom(foundRoom as Room);
       setLeaderTeam(
         normalizeTeam(
-          { ...(foundTeam as Team), joined_at: new Date().toISOString() },
+          { ...(foundTeam as Team), joined_at: joinedAt },
           0
         )
       );
       setMode("leader");
       queueRoomRefresh(foundRoom.id, 0);
       if (typeof window !== "undefined") {
+        window.localStorage.setItem(
+          LEADER_SESSION_KEY,
+          JSON.stringify({
+            roomCode: foundRoom.code,
+            teamCode: teamCodeInput.trim().toUpperCase(),
+          })
+        );
         const url = new URL(window.location.href);
         url.pathname = "/join";
         url.searchParams.set("room", foundRoom.code);
@@ -232,7 +253,12 @@ export function useGameActions({
     try {
       const definition = plannedDefinition ?? buildRoundDefinition(roundType);
       const nextRoundNumber = (rounds[0]?.round_number ?? 0) + 1;
-      const status: RoundStatus = definition.requiresVoting ? "voting" : "scoring";
+      const status: RoundStatus = "reveal";
+      const hostSupabase = getHostSupabase();
+      const quizQuestionSet = definition.questionSet ?? null;
+      const publicQuestionSet = quizQuestionSet?.map(toPublicQuizQuestion) ?? null;
+      const challengeConfig =
+        definition.challengeConfig ?? challengeConfigForRoundType(definition.type);
       const selectedTimer =
         Number(customTimerInput) > 0 ? Number(customTimerInput) : timerDuration;
 
@@ -248,23 +274,32 @@ export function useGameActions({
         instructions: definition.instructions,
         twist: definition.twist ?? null,
         status,
+        rival_team_id: null,
+        challenge_config: challengeConfig,
+        challenge_winner_team_id: null,
+        challenge_resolved_at: null,
         is_final: definition.isFinal ?? false,
         timer_seconds: definition.requiresVoting ? selectedTimer : null,
         answer_options: definition.answerOptions ?? null,
-        correct_answer: definition.correctAnswer ?? null,
-        question_set: definition.questionSet ?? null,
+        correct_answer: quizQuestionSet?.length ? null : definition.correctAnswer ?? null,
+        question_set: publicQuestionSet,
         current_question_index: definition.currentQuestionIndex ?? 0,
         question_status: definition.questionStatus ?? "waiting",
         question_started_at: null,
+        started_at: null,
       };
 
-      const { data: insertedRound, error } = await supabase
+      const { data: insertedRound, error } = await hostSupabase
         .from("rounds")
         .insert(roundPayload)
         .select(roundColumns)
         .single();
 
       if (error) {
+        if (quizQuestionSet?.length) {
+          throw error;
+        }
+
         const legacyPayload: Partial<typeof roundPayload> = { ...roundPayload };
         delete legacyPayload.timer_seconds;
         delete legacyPayload.answer_options;
@@ -273,12 +308,17 @@ export function useGameActions({
         delete legacyPayload.current_question_index;
         delete legacyPayload.question_status;
         delete legacyPayload.question_started_at;
-        const { error: retryError } = await supabase
+        delete legacyPayload.started_at;
+        delete legacyPayload.rival_team_id;
+        delete legacyPayload.challenge_config;
+        delete legacyPayload.challenge_winner_team_id;
+        delete legacyPayload.challenge_resolved_at;
+        const { error: retryError } = await hostSupabase
           .from("rounds")
           .insert(legacyPayload);
 
         if (retryError) {
-          const { error: minimalRetryError } = await supabase
+          const { error: minimalRetryError } = await hostSupabase
             .from("rounds")
             .insert(toLegacyRoundPayload(roundPayload));
 
@@ -287,11 +327,34 @@ export function useGameActions({
         queueRoomRefresh(room.id, 0);
       } else if (insertedRound) {
         const mappedRound = toRoundRecord(insertedRound as Record<string, unknown>);
+
+        if (quizQuestionSet?.length) {
+          const keys = quizQuestionSet.map((question, questionIndex) => {
+            if (!question.correctAnswer) {
+              throw new Error(`Quiz question ${questionIndex + 1} is missing its answer key.`);
+            }
+            return {
+              questionIndex,
+              correctAnswer: question.correctAnswer,
+            };
+          });
+
+          const { error: keyError } = await hostSupabase.rpc(
+            "host_set_quiz_answer_keys",
+            { p_round_id: mappedRound.id, p_keys: keys }
+          );
+
+          if (keyError) {
+            await hostSupabase.from("rounds").delete().eq("id", mappedRound.id);
+            throw keyError;
+          }
+        }
+
         setRounds((current) => [mappedRound, ...current]);
         setActiveRound(mappedRound);
       }
 
-      await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
+      await hostSupabase.from("rooms").update({ status: "active" }).eq("id", room.id);
       setRoom((current) => (current ? { ...current, status: "active" } : current));
 
       setSelectedRoundType(definition.type);
@@ -304,6 +367,38 @@ export function useGameActions({
       );
       return false;
     }
+  }
+
+  async function beginRound() {
+    if (!activeRound) return;
+    if (activeRound.status !== "reveal" && activeRound.status !== "lobby") return;
+
+    const nextStatus: RoundStatus = roundRequiresVoting(activeRound.round_type)
+      ? "voting"
+      : "live";
+    const startedAt = new Date().toISOString();
+    const hostSupabase = getHostSupabase();
+
+    const { error } = await hostSupabase
+      .from("rounds")
+      .update({ status: nextStatus, started_at: startedAt })
+      .eq("id", activeRound.id);
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    const patch = { status: nextStatus, started_at: startedAt };
+    setActiveRound((current) =>
+      current?.id === activeRound.id ? { ...current, ...patch } : current
+    );
+    setRounds((current) =>
+      current.map((round) =>
+        round.id === activeRound.id ? { ...round, ...patch } : round
+      )
+    );
+    sound.play("roundStart");
   }
 
   async function submitVote(targetTeamId: string) {
@@ -371,14 +466,14 @@ export function useGameActions({
 
     const currentQuestion = getCurrentQuestion(activeRound);
     const correctAnswer = currentQuestion?.correctAnswer ?? activeRound.correct_answer;
-    if (!correctAnswer) return;
+    if (!rapidQuiz && !correctAnswer) return;
 
     const questionIndex = getCurrentQuestionIndex(activeRound);
     const answerKey = `${activeRound.id}:${questionIndex}:${answer}`;
     if (pendingAnswerKey) return;
 
     const submittedAt = new Date().toISOString();
-    const isCorrect = answer === correctAnswer;
+    const isCorrect = rapidQuiz ? false : answer === correctAnswer;
     const previousSubmission =
       answerSubmissions.find(
         (submission) =>
@@ -464,14 +559,54 @@ export function useGameActions({
 
   async function lockVotes() {
     if (!activeRound) return;
+    if (activeRound.status !== "voting" && activeRound.status !== "live") return;
 
-    const winner = sortedVoteCounts[0];
+    let targetTeamId = activeRound.target_team_id;
+    let rivalTeamId = activeRound.rival_team_id ?? null;
 
-    const { error } = await supabase
+    if (activeRound.status === "voting") {
+      const highestCount = Math.max(0, ...sortedVoteCounts.map((entry) => entry.count));
+
+      if (highestCount === 0) {
+        setLoadError("No votes were submitted. Keep voting open or choose another round.");
+        return;
+      }
+
+      const tiedLeaders = sortedVoteCounts.filter((entry) => entry.count === highestCount);
+      const randomIndex =
+        tiedLeaders.length > 1
+          ? crypto.getRandomValues(new Uint32Array(1))[0] % tiedLeaders.length
+          : 0;
+      const winner = tiedLeaders[randomIndex];
+      targetTeamId = winner?.team.id ?? null;
+
+      if (tiedLeaders.length > 1 && winner) {
+        setLoadError(
+          `Vote tied at ${highestCount}. Random tiebreak selected ${winner.team.name}.`
+        );
+      } else {
+        setLoadError(null);
+      }
+    }
+
+    const config = getChallengeConfig(activeRound);
+    if (targetTeamId && requiresRival(config)) {
+      rivalTeamId =
+        chooseAutomaticRival({
+          config,
+          targetTeamId,
+          teams,
+          voteCounts: sortedVoteCounts,
+        })?.id ?? null;
+    }
+
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase
       .from("rounds")
       .update({
-        status: "scoring",
-        target_team_id: winner?.team.id ?? null,
+        status: "locked",
+        target_team_id: targetTeamId,
+        rival_team_id: rivalTeamId,
       })
       .eq("id", activeRound.id);
 
@@ -480,19 +615,126 @@ export function useGameActions({
       return;
     }
 
-      setActiveRound((current) =>
-        current?.id === activeRound.id
-          ? { ...current, status: "scoring", target_team_id: winner?.team.id ?? null }
-          : current
-      );
+    const patch = {
+      status: "locked" as const,
+      target_team_id: targetTeamId,
+      rival_team_id: rivalTeamId,
+    };
+    setActiveRound((current) =>
+      current?.id === activeRound.id ? { ...current, ...patch } : current
+    );
     setRounds((current) =>
       current.map((round) =>
-        round.id === activeRound.id
-          ? { ...round, status: "scoring", target_team_id: winner?.team.id ?? null }
-          : round
+        round.id === activeRound.id ? { ...round, ...patch } : round
       )
     );
     sound.play("reveal");
+  }
+
+  async function openScoring() {
+    if (!activeRound || activeRound.status !== "locked") return;
+
+    if (roundRequiresVoting(activeRound.round_type) && !activeRound.target_team_id) {
+      setLoadError("Choose a pressure team before opening scoring.");
+      return;
+    }
+
+    const config = getChallengeConfig(activeRound);
+    if (requiresRival(config) && !activeRound.rival_team_id) {
+      setLoadError("Choose a rival before opening scoring.");
+      return;
+    }
+
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase
+      .from("rounds")
+      .update({ status: "scoring" })
+      .eq("id", activeRound.id);
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    setActiveRound((current) =>
+      current?.id === activeRound.id ? { ...current, status: "scoring" } : current
+    );
+    setRounds((current) =>
+      current.map((round) =>
+        round.id === activeRound.id ? { ...round, status: "scoring" } : round
+      )
+    );
+  }
+
+  async function setRivalTeam(rivalTeamId: string) {
+    if (
+      !activeRound ||
+      !activeRound.target_team_id ||
+      activeRound.challenge_resolved_at ||
+      pendingChallengeAction
+    ) {
+      return;
+    }
+
+    setPendingChallengeAction("set-rival");
+    setLoadError(null);
+
+    try {
+      const hostSupabase = getHostSupabase();
+      const { error } = await hostSupabase.rpc("host_set_round_rival", {
+        p_round_id: activeRound.id,
+        p_rival_team_id: rivalTeamId,
+      });
+
+      if (error) throw error;
+
+      setActiveRound((current) =>
+        current?.id === activeRound.id ? { ...current, rival_team_id: rivalTeamId } : current
+      );
+      setRounds((current) =>
+        current.map((round) =>
+          round.id === activeRound.id ? { ...round, rival_team_id: rivalTeamId } : round
+        )
+      );
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to set rival.");
+    } finally {
+      setPendingChallengeAction(null);
+    }
+  }
+
+  async function resolveChallenge(winnerTeamId: string) {
+    if (
+      !room ||
+      !activeRound ||
+      activeRound.status !== "scoring" ||
+      activeRound.challenge_resolved_at ||
+      pendingChallengeAction
+    ) {
+      return;
+    }
+
+    setPendingChallengeAction(`resolve:${winnerTeamId}`);
+    setLoadError(null);
+
+    try {
+      const hostSupabase = getHostSupabase();
+      const { error } = await hostSupabase.rpc("host_resolve_challenge", {
+        p_round_id: activeRound.id,
+        p_winner_team_id: winnerTeamId,
+      });
+
+      if (error) throw error;
+
+      await refreshRoomData(room.id);
+      sound.play("score");
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Unable to resolve challenge."
+      );
+    } finally {
+      setPendingChallengeAction(null);
+    }
   }
 
   async function applyScore(
@@ -526,8 +768,9 @@ export function useGameActions({
           crypto.randomUUID(),
         ].join(":");
 
-      const { data, error } = await supabase
-        .rpc("apply_score_event", {
+      const hostSupabase = getHostSupabase();
+      const { data, error } = await hostSupabase
+        .rpc("host_apply_score_event", {
           p_room_id: room.id,
           p_team_id: teamId,
           p_delta: finalDelta,
@@ -567,8 +810,9 @@ export function useGameActions({
     const team = teams.find((entry) => entry.id === latestScoreEvent.team_id);
     if (!team) return;
 
-    const { data, error } = await supabase
-      .rpc("undo_score_event", {
+    const hostSupabase = getHostSupabase();
+    const { data, error } = await hostSupabase
+      .rpc("host_undo_score_event", {
         p_score_event_id: latestScoreEvent.id,
       })
       .single();
@@ -591,15 +835,56 @@ export function useGameActions({
     );
   }
 
+  async function transferScore(
+    fromTeamId: string,
+    toTeamId: string,
+    amount: number,
+    reason: string
+  ) {
+    if (!room || amount <= 0 || fromTeamId === toTeamId) return;
+
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase.rpc("host_transfer_score", {
+      p_room_id: room.id,
+      p_from_team_id: fromTeamId,
+      p_to_team_id: toTeamId,
+      p_amount: amount,
+      p_reason: reason,
+      p_round_id: activeRound?.id ?? null,
+      p_dedupe_key: [
+        "transfer",
+        room.id,
+        activeRound?.id ?? "room",
+        fromTeamId,
+        toTeamId,
+        amount,
+        crypto.randomUUID(),
+      ].join(":"),
+    });
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    await refreshRoomData(room.id);
+    sound.play("score");
+  }
+
   async function completeRound() {
     if (!activeRound) return;
+    if (activeRound.status !== "scoring") return;
 
-    const nextStatus: RoundStatus =
-      activeRound.round_type === "final_double" ? "winner" : "complete";
+    const config = getChallengeConfig(activeRound);
+    if (requiresChallengeResolution(config) && !activeRound.challenge_resolved_at) {
+      setLoadError("Record the challenge winner before completing this round.");
+      return;
+    }
 
-    const { error } = await supabase
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase
       .from("rounds")
-      .update({ status: nextStatus })
+      .update({ status: "complete" })
       .eq("id", activeRound.id);
 
     if (error) {
@@ -607,22 +892,13 @@ export function useGameActions({
       return;
     }
 
-    if (activeRound.round_type === "final_double") {
-      setShowWinner(true);
-      setActiveRound((current) =>
-        current?.id === activeRound.id ? { ...current, status: "winner" } : current
-      );
-      setRounds((current) =>
-        current.map((round) =>
-          round.id === activeRound.id ? { ...round, status: "winner" } : round
-        )
-      );
-      sound.play("winner");
-      return;
-    }
-
-    await supabase.from("rooms").update({ status: "active" }).eq("id", activeRound.room_id);
-    setActiveRound(null);
+    await hostSupabase
+      .from("rooms")
+      .update({ status: "active" })
+      .eq("id", activeRound.room_id);
+    setActiveRound((current) =>
+      current?.id === activeRound.id ? { ...current, status: "complete" } : current
+    );
     setRounds((current) =>
       current.map((round) =>
         round.id === activeRound.id ? { ...round, status: "complete" } : round
@@ -632,8 +908,34 @@ export function useGameActions({
 
   async function revealWinner() {
     if (!room) return;
+    if (teams.length === 0) {
+      setLoadError("Cannot reveal a winner without teams.");
+      return;
+    }
+
+
+    const topScore = Math.max(...teams.map((team) => team.score));
+    const tiedWinners = teams.filter((team) => team.score === topScore);
+
+    if (tiedWinners.length !== 1) {
+      const names = tiedWinners.map((team) => team.name).join(", ");
+      setLoadError(
+        `Final score is tied between ${names}. Run a tiebreak round before revealing the winner.`
+      );
+      return;
+    }
+
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase
+      .from("rooms")
+      .update({ status: "winner" })
+      .eq("id", room.id);
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
     setShowWinner(true);
-    await supabase.from("rooms").update({ status: "winner" }).eq("id", room.id);
     setRoom((current) => (current ? { ...current, status: "winner" } : current));
     sound.play("winner");
   }
@@ -644,19 +946,20 @@ export function useGameActions({
     setLoadError(null);
 
     try {
+      const hostSupabase = getHostSupabase();
       const roundIds = rounds.map((round) => round.id);
 
       if (roundIds.length > 0) {
-        await supabase.from("votes").delete().in("round_id", roundIds);
-        await supabase.from("answer_submissions").delete().in("round_id", roundIds);
+        await hostSupabase.from("votes").delete().in("round_id", roundIds);
+        await hostSupabase.from("answer_submissions").delete().in("round_id", roundIds);
       }
 
-      await supabase.from("score_events").delete().eq("room_id", room.id);
-      await supabase.from("rounds").delete().eq("room_id", room.id);
+      await hostSupabase.from("score_events").delete().eq("room_id", room.id);
+      await hostSupabase.from("rounds").delete().eq("room_id", room.id);
       await Promise.all(
-        teams.map((team) => supabase.from("teams").update({ score: 0 }).eq("id", team.id))
+        teams.map((team) => hostSupabase.from("teams").update({ score: 0 }).eq("id", team.id))
       );
-      await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
+      await hostSupabase.from("rooms").update({ status: "active" }).eq("id", room.id);
       setShowWinner(false);
       setVotes([]);
       setAnswerSubmissions([]);
@@ -675,7 +978,8 @@ export function useGameActions({
     teamId: string,
     patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>
   ) {
-    const { error } = await supabase.from("teams").update(patch).eq("id", teamId);
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase.from("teams").update(patch).eq("id", teamId);
 
     if (error) {
       setLoadError(error.message);
@@ -694,7 +998,8 @@ export function useGameActions({
       >
     >
   ) {
-    const { error } = await supabase.from("rounds").update(patch).eq("id", roundId);
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase.from("rounds").update(patch).eq("id", roundId);
 
     if (error) {
       setLoadError(error.message);
@@ -708,13 +1013,19 @@ export function useGameActions({
     scoringTeamIds,
     pendingVoteTargetId,
     pendingAnswerKey,
+    pendingChallengeAction,
     createRoom,
     joinAsLeader,
     startRound,
+    beginRound,
     submitVote,
     submitAnswer,
     lockVotes,
+    openScoring,
+    setRivalTeam,
+    resolveChallenge,
     applyScore,
+    transferScore,
     undoLastScore,
     completeRound,
     revealWinner,

@@ -39,9 +39,12 @@ export function LeaderScreen(props: LeaderScreenProps) {
   const answerOpen = Boolean(
     props.activeRound?.answer_options?.length &&
       props.activeRound.correct_answer &&
+      props.activeRound.status === "live" &&
       !isRapidQuizRound(props.activeRound)
   );
-  const quizOpen = isRapidQuizRound(props.activeRound);
+  const quizOpen = Boolean(
+    isRapidQuizRound(props.activeRound) && props.activeRound?.status === "live"
+  );
 
   return (
     <motion.main
@@ -67,7 +70,7 @@ export function LeaderScreen(props: LeaderScreenProps) {
           <button className="ghost-btn icon-btn" onClick={props.toggleSound} aria-label="Toggle sound">
             {props.soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
           </button>
-          {(voteOpen || answerOpen || quizOpen) && props.activeRound && (
+          {(voteOpen || answerOpen) && props.activeRound && (
             <TimerRing
               secondsLeft={props.secondsLeft}
               duration={getRoundTimerSeconds(props.activeRound)}
@@ -92,6 +95,7 @@ export function LeaderScreen(props: LeaderScreenProps) {
           {quizOpen && props.activeRound ? (
             <QuizLeaderPanel
               round={props.activeRound}
+              secondsLeft={props.secondsLeft}
               leaderAnswer={props.leaderAnswer}
               pendingAnswerKey={props.pendingAnswerKey}
               submitAnswer={props.submitAnswer}
@@ -115,9 +119,17 @@ export function LeaderScreen(props: LeaderScreenProps) {
           ) : (
             <div className="challenge-preview">
               <p className="section-kicker">
-                {props.activeRound.status === "scoring" ? "Host scoring" : "Task live"}
+                {props.activeRound.status === "reveal" || props.activeRound.status === "lobby"
+                  ? "Round reveal"
+                  : props.activeRound.status === "scoring"
+                  ? "Host scoring"
+                  : "Task live"}
               </p>
-              <h3>{props.activeRound.challenge}</h3>
+              <h3>
+                {props.activeRound.status === "reveal" || props.activeRound.status === "lobby"
+                  ? props.activeRound.prompt
+                  : props.activeRound.challenge}
+              </h3>
               {props.leaderVoteTarget && <p>You voted for {props.leaderVoteTarget.name}.</p>}
             </div>
           )}
@@ -161,6 +173,8 @@ function PlayerTaskPanel({
           : answerOpen
           ? "Choose your answer"
           : voteOpen
+          ? round.prompt
+          : round.status === "reveal" || round.status === "lobby"
           ? round.prompt
           : round.challenge}
       </h3>

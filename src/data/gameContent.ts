@@ -1,4 +1,9 @@
-import type { QuizQuestion, RoundDefinition, RoundType } from "../lib/types";
+import type {
+  QuizDifficulty,
+  QuizQuestion,
+  RoundDefinition,
+  RoundType,
+} from "../lib/types";
 
 // ---------------------------------------------------------------------------
 // VOTING PROMPTS
@@ -544,18 +549,31 @@ function shuffle<T>(items: T[]): T[] {
   return [...items].sort(() => Math.random() - 0.5);
 }
 
+function getQuizDifficulty(index: number, total: number): QuizDifficulty {
+  const position = total <= 1 ? 0 : index / (total - 1);
+  if (position < 0.4) return "easy";
+  if (position < 0.8) return "medium";
+  return "hard";
+}
+
 export function buildQuizQuestionSet(roundType: RoundType, count = 5): QuizQuestion[] {
   const timeLimitSeconds = roundType === "bible_speed" ? 20 : 15;
   const questionBank =
     roundType === "bible_speed" ? bibleSpeedQuestions : multipleChoiceQuestions;
+  const category =
+    roundType === "bible_speed" ? "bible_reference" : "bible_knowledge";
 
-  return shuffle(questionBank)
+  return shuffle(
+    questionBank.map((question, bankIndex) => ({ question, bankIndex }))
+  )
     .slice(0, count)
-    .map((question, index) => ({
+    .map(({ question, bankIndex }, index) => ({
       id: `${roundType}-${index + 1}-${question.correctAnswer.toLowerCase().replace(/\W+/g, "-")}`,
       prompt: question.question,
       options: shuffle(question.options),
       correctAnswer: question.correctAnswer,
+      category,
+      difficulty: getQuizDifficulty(bankIndex, questionBank.length),
       timeLimitSeconds,
       points: 5,
     }));
@@ -630,7 +648,7 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
         instructions:
           "Run each question fast. Start the question, lock answers, score, then jump straight to the next one.",
         scoringGuide:
-          "Fastest correct can earn +10. Each correct team can earn +5.",
+          "Fastest correct earns +10 total. Every other correct team earns +5. Wrong answers earn 0.",
         twist: pickRandom(twists),
         requiresVoting: false,
         answerOptions: question.options,
@@ -652,7 +670,7 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
         instructions:
           "Run quick Bible questions from the host screen. Leaders answer from phones and the host advances immediately.",
         scoringGuide:
-          "Fastest correct can earn +10. Each correct team can earn +5.",
+          "Fastest correct earns +10 total. Every other correct team earns +5. Wrong answers earn 0.",
         requiresVoting: false,
         answerOptions: question.options,
         correctAnswer: question.correctAnswer,

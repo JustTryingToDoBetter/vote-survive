@@ -1,4 +1,23 @@
-import type { AnswerSubmission, QuizQuestion, RoundRecord } from "../../lib/types";
+import type {
+  AnswerSubmission,
+  QuizCategory,
+  QuizQuestion,
+  RoundRecord,
+} from "../../lib/types";
+
+export type QuizAward = { teamId: string; points: number; role: "fastest" | "correct" };
+
+export function toPublicQuizQuestion(question: QuizQuestion): QuizQuestion {
+  return {
+    id: question.id,
+    prompt: question.prompt,
+    options: question.options,
+    category: question.category,
+    difficulty: question.difficulty,
+    timeLimitSeconds: question.timeLimitSeconds,
+    points: question.points,
+  };
+}
 
 export function isRapidQuizRound(round: RoundRecord | null | undefined) {
   return Boolean(
@@ -51,6 +70,63 @@ export function getFastestCorrect(
         (a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
       )[0] ?? null
   );
+}
+
+export function getQuizSecondsLeft(
+  round: RoundRecord | null | undefined,
+  nowMs = Date.now()
+) {
+  if (
+    !isRapidQuizRound(round) ||
+    round?.question_status !== "live" ||
+    !round.question_started_at
+  ) {
+    return 0;
+  }
+
+  const question = getCurrentQuestion(round);
+  if (!question) return 0;
+
+  const startedAt = new Date(round.question_started_at).getTime();
+  if (!Number.isFinite(startedAt)) return question.timeLimitSeconds;
+
+  const elapsedSeconds = Math.max(0, Math.floor((nowMs - startedAt) / 1000));
+  return Math.max(0, question.timeLimitSeconds - elapsedSeconds);
+}
+
+export function isQuizTimerExpired(
+  round: RoundRecord | null | undefined,
+  nowMs = Date.now()
+) {
+  return Boolean(
+    isRapidQuizRound(round) &&
+      round?.question_status === "live" &&
+      round.question_started_at &&
+      getQuizSecondsLeft(round, nowMs) <= 0
+  );
+}
+
+export function getQuizAwardPlan(
+  answers: AnswerSubmission[],
+  round: RoundRecord | null | undefined
+): QuizAward[] {
+  const question = getCurrentQuestion(round);
+  if (!question) return [];
+
+  return getCurrentQuestionAnswers(answers, round)
+    .filter((answer) => answer.is_correct)
+    .sort((a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime())
+    .map((answer, index) => ({
+      teamId: answer.team_id,
+      points: index === 0 ? question.points * 2 : question.points,
+      role: index === 0 ? "fastest" : "correct",
+    }));
+}
+
+export function formatQuizCategory(category: QuizCategory | undefined) {
+  if (category === "bible_reference") return "Bible references";
+  if (category === "bible_knowledge") return "Bible knowledge";
+  return "Quiz";
 }
 
 export function isLastQuizQuestion(round: RoundRecord) {
