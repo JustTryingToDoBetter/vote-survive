@@ -6,7 +6,6 @@ import {
   fetchAnswers,
   fetchRoom,
   fetchRoomByCode,
-  fetchTeamByLeaderCode,
   fetchRounds,
   fetchScores,
   fetchTeams,
@@ -281,12 +280,12 @@ export function useRoomSession({
       try {
         const parsed = JSON.parse(storedLeader) as {
           roomCode?: string;
-          teamCode?: string;
+          sessionToken?: string;
         };
         const storedRoomCode = parsed.roomCode?.trim().toUpperCase() ?? "";
-        const storedTeamCode = parsed.teamCode?.trim().toUpperCase() ?? "";
+        const storedSessionToken = parsed.sessionToken?.trim() ?? "";
 
-        if (!storedRoomCode || !storedTeamCode) {
+        if (!storedRoomCode || !storedSessionToken) {
           window.localStorage.removeItem(LEADER_SESSION_KEY);
           return;
         }
@@ -297,16 +296,45 @@ export function useRoomSession({
           void (async () => {
             try {
               setIsLoading(true);
-              const foundRoom = await fetchRoomByCode(storedRoomCode);
-              const foundTeam = await fetchTeamByLeaderCode(foundRoom.id, storedTeamCode);
+              const { data: sessionData, error: sessionError } = await supabase
+                .rpc("restore_team_session", {
+                  p_session_token: storedSessionToken,
+                })
+                .single();
+
+              if (sessionError || !sessionData) {
+                throw sessionError ?? new Error("Leader session is invalid or expired.");
+              }
+
+              const restoredSession = sessionData as {
+                room_id: string;
+                team_id: string;
+                joined_at: string | null;
+                expires_at: string;
+              };
+              const foundRoom = await fetchRoom(restoredSession.room_id);
+              const roomTeams = await fetchTeams(foundRoom.id);
+              const foundTeam = roomTeams.find(
+                (team: Team) => team.id === restoredSession.team_id
+              );
+
+              if (!foundTeam) {
+                throw new Error("Leader team could not be restored.");
+              }
+
               setRoom(foundRoom);
+              setTeams(roomTeams);
               setRoomCodeInput(foundRoom.code);
-              setTeamCodeInput(storedTeamCode);
-              setLeaderTeam(foundTeam);
+              setTeamCodeInput("");
+              setLeaderTeam({
+                ...foundTeam,
+                joined_at: restoredSession.joined_at ?? foundTeam.joined_at,
+              });
               setMode("leader");
               await refreshRoomData(foundRoom.id);
             } catch {
               window.localStorage.removeItem(LEADER_SESSION_KEY);
+              setLeaderTeam(null);
             } finally {
               setIsLoading(false);
             }
@@ -340,7 +368,7 @@ export function useRoomSession({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "teams", filter: `room_id=eq.${roomId}` },
-        (payload) => {
+        (payload: { eventType?: string; old?: { id?: string }; new?: Record<string, unknown> }) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
             setTeams((current) => current.filter((team) => team.id !== oldRow.id));
@@ -355,7 +383,7 @@ export function useRoomSession({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "rounds", filter: `room_id=eq.${roomId}` },
-        (payload) => {
+        (payload: { eventType?: string; old?: { id?: string }; new?: Record<string, unknown> }) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
             setRounds((current) => current.filter((round) => round.id !== oldRow.id));
@@ -377,7 +405,7 @@ export function useRoomSession({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "score_events", filter: `room_id=eq.${roomId}` },
-        (payload) => {
+        (payload: { eventType?: string; old?: { id?: string }; new?: Record<string, unknown> }) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
             setScoreEvents((current) => current.filter((event) => event.id !== oldRow.id));
@@ -394,7 +422,7 @@ export function useRoomSession({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
-        (payload) => {
+        (payload: { eventType?: string; new?: Record<string, unknown> }) => {
           if (payload.eventType !== "DELETE") setRoom(payload.new as Room);
         }
       )
@@ -423,7 +451,7 @@ export function useRoomSession({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "votes", filter: `round_id=eq.${activeRound.id}` },
-        (payload) => {
+        (payload: { eventType?: string; old?: { id?: string }; new?: Record<string, unknown> }) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
             setVotes((current) => current.filter((vote) => vote.id !== oldRow.id));
@@ -441,7 +469,7 @@ export function useRoomSession({
           table: "answer_submissions",
           filter: `round_id=eq.${activeRound.id}`,
         },
-        (payload) => {
+        (payload: { eventType?: string; old?: { id?: string }; new?: Record<string, unknown> }) => {
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as { id?: string };
             setAnswerSubmissions((current) =>

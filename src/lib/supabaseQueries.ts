@@ -1,11 +1,10 @@
-import { toRoundRecord } from "../app/appHelpers";
-import { normalizeTeam } from "../app/appHelpers";
-import { supabase } from "./supabase";
+import { HOST_SESSION_KEY, normalizeTeam, toRoundRecord } from "../app/appHelpers";
+import { getHostSupabase, supabase } from "./supabase";
 import type { AnswerSubmission, Room, RoundRecord, ScoreEvent, Team, VoteRow } from "./types";
 
 export const roomColumns = "id,code,status,planned_round_queue,created_at";
 export const teamColumns =
-  "id,room_id,name,leader_code,score,joined_at,animal,avatar_emoji,avatar_image,color";
+  "id,room_id,name,score,joined_at,animal,avatar_emoji,avatar_image,color";
 export const roundColumns =
   "id,room_id,round_number,round_type,title,prompt,question,challenge,scoring_guide,instructions,twist,status,target_team_id,rival_team_id,challenge_config,challenge_winner_team_id,challenge_resolved_at,is_final,timer_seconds,answer_options,correct_answer,question_set,current_question_index,question_status,question_started_at,started_at,created_at";
 export const voteColumns = "id,round_id,voter_team_id,target_team_id";
@@ -50,6 +49,25 @@ export async function fetchRoomByCode(code: string) {
 }
 
 export async function fetchTeams(roomId: string) {
+  if (
+    typeof window !== "undefined" &&
+    window.localStorage.getItem(HOST_SESSION_KEY)
+  ) {
+    try {
+      const { data, error } = await getHostSupabase().rpc("host_list_teams", {
+        p_room_id: roomId,
+      });
+
+      if (!error) {
+        return (data ?? []).map((team: Team, index: number) =>
+          normalizeTeam(team, index)
+        );
+      }
+    } catch {
+      // Fall through to the public team projection when the host session is stale.
+    }
+  }
+
   const { data, error } = await supabase
     .from("teams")
     .select(teamColumns)
@@ -57,19 +75,7 @@ export async function fetchTeams(roomId: string) {
     .order("name", { ascending: true });
 
   if (error) throw error;
-  return (data ?? []).map((team, index) => normalizeTeam(team as Team, index));
-}
-
-export async function fetchTeamByLeaderCode(roomId: string, leaderCode: string) {
-  const { data, error } = await supabase
-    .from("teams")
-    .select(teamColumns)
-    .eq("room_id", roomId)
-    .eq("leader_code", leaderCode)
-    .single();
-
-  if (error) throw error;
-  return normalizeTeam(data as Team, 0);
+  return (data ?? []).map((team: Team, index: number) => normalizeTeam(team, index));
 }
 
 export async function fetchRounds(roomId: string) {
@@ -80,7 +86,9 @@ export async function fetchRounds(roomId: string) {
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []).map((row) => toRoundRecord(row as Record<string, unknown>));
+  return (data ?? []).map((row: Record<string, unknown>) =>
+    toRoundRecord(row)
+  );
 }
 
 export async function fetchVotes(roundId: string) {
@@ -101,7 +109,9 @@ export async function fetchAnswers(roundId: string) {
     .order("submitted_at", { ascending: true });
 
   if (error) throw error;
-  return (data ?? []).map((row) => mapAnswerSubmission(row as Record<string, unknown>));
+  return (data ?? []).map((row: Record<string, unknown>) =>
+    mapAnswerSubmission(row)
+  );
 }
 
 export async function fetchScores(roomId: string) {

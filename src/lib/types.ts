@@ -85,7 +85,7 @@ export type Team = {
   id: string;
   room_id: string;
   name: string;
-  leader_code: string;
+  leader_code?: string;
   score: number;
   joined_at?: string | null;
   animal?: string | null;

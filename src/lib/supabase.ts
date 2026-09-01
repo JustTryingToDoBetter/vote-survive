@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 // src/lib/supabase.ts
 import { createClient } from "@supabase/supabase-js";
 
@@ -11,7 +13,12 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 export const supabase = createClient(
   supabaseUrl || fallbackUrl,
   supabaseAnonKey || fallbackKey
-);
+) as any;
+
+type SupabaseClientInstance = any;
+
+let cachedHostClient: SupabaseClientInstance | null = null;
+let cachedHostPin: string | null = null;
 
 export function createHostSupabase(hostPin: string) {
   const normalizedPin = hostPin.trim();
@@ -19,13 +26,30 @@ export function createHostSupabase(hostPin: string) {
     throw new Error("Host session is missing.");
   }
 
-  return createClient(supabaseUrl || fallbackUrl, supabaseAnonKey || fallbackKey, {
-    global: {
-      headers: {
-        "x-vote-survive-host-pin": normalizedPin,
+  if (cachedHostClient && cachedHostPin === normalizedPin) {
+    return cachedHostClient;
+  }
+
+  cachedHostPin = normalizedPin;
+  cachedHostClient = createClient(
+    supabaseUrl || fallbackUrl,
+    supabaseAnonKey || fallbackKey,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storageKey: `vote-survive-host-auth:${normalizedPin}`,
       },
-    },
-  });
+      global: {
+        headers: {
+          "x-vote-survive-host-pin": normalizedPin,
+        },
+      },
+    }
+  ) as any;
+
+  return cachedHostClient;
 }
 
 export function getHostSupabase() {

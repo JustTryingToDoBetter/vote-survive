@@ -5,7 +5,6 @@ import {
   LEADER_SESSION_KEY,
   createDefaultDrafts,
   generateCode,
-  normalizeTeam,
   toLegacyRoundPayload,
   toRoundRecord,
 } from "../app/appHelpers";
@@ -30,11 +29,10 @@ import {
 } from "../features/challenge/challengeEngine";
 import { createHostSupabase, getHostSupabase, supabase } from "../lib/supabase";
 import {
-  fetchRoomByCode,
-  fetchTeamByLeaderCode,
+  fetchRoom,
+  fetchTeams,
   roomColumns,
   roundColumns,
-  teamColumns,
 } from "../lib/supabaseQueries";
 import type { SoundName } from "../lib/sound";
 import type {
@@ -56,6 +54,20 @@ type SoundEffects = {
 
 function votesForLeader(votes: VoteRow[], leaderTeamId: string) {
   return votes.find((vote) => vote.voter_team_id === leaderTeamId) ?? null;
+}
+
+function getStoredLeaderSessionToken() {
+  if (typeof window === "undefined") return null;
+
+  const stored = window.localStorage.getItem(LEADER_SESSION_KEY);
+  if (!stored) return null;
+
+  try {
+    const parsed = JSON.parse(stored) as { sessionToken?: string };
+    return parsed.sessionToken?.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 type ScoreRpcRow = ScoreEvent & {
@@ -162,7 +174,7 @@ export function useGameActions({
 
       if (roomError || !createdRoom) throw roomError ?? new Error("Room creation failed.");
 
-      const { data: createdTeams, error: teamsError } = await hostSupabase
+      const { error: teamsError } = await hostSupabase
         .from("teams")
         .insert(
           createDefaultDrafts().map((team) => ({
@@ -175,10 +187,16 @@ export function useGameActions({
             avatar_image: team.avatarImage,
             color: team.color,
           }))
-        )
-        .select(teamColumns);
+        );
 
       if (teamsError) throw teamsError;
+
+      const { data: createdTeams, error: teamListError } = await hostSupabase.rpc(
+        "host_list_teams",
+        { p_room_id: createdRoom.id }
+      );
+
+      if (teamListError) throw teamListError;
 
       setRoom(createdRoom as Room);
       setTeams((createdTeams ?? []) as Team[]);
@@ -204,30 +222,38 @@ export function useGameActions({
     setLoadError(null);
 
     try {
-      const foundRoom = await fetchRoomByCode(roomCodeInput.trim().toUpperCase());
-      const foundTeam = await fetchTeamByLeaderCode(
-        foundRoom.id,
-        teamCodeInput.trim().toUpperCase()
-      );
+      const normalizedRoomCode = roomCodeInput.trim().toUpperCase();
+      const normalizedLeaderCode = teamCodeInput.trim().toUpperCase();
 
-      const joinedAt = new Date().toISOString();
-      const { error: joinedError } = await supabase.rpc("join_team_session", {
-        p_room_id: foundRoom.id,
-        p_team_id: foundTeam.id,
-        p_leader_code: teamCodeInput.trim().toUpperCase(),
-      });
+      const { data: sessionData, error: joinedError } = await supabase
+        .rpc("join_team_session", {
+          p_room_code: normalizedRoomCode,
+          p_leader_code: normalizedLeaderCode,
+        })
+        .single();
 
-      if (joinedError) {
-        throw joinedError;
+      if (joinedError || !sessionData) {
+        throw joinedError ?? new Error("Unable to create leader session.");
       }
 
-      setRoom(foundRoom as Room);
-      setLeaderTeam(
-        normalizeTeam(
-          { ...(foundTeam as Team), joined_at: joinedAt },
-          0
-        )
-      );
+      const joinedSession = sessionData as {
+        room_id: string;
+        team_id: string;
+        session_token: string;
+        joined_at: string;
+        expires_at: string;
+      };
+      const foundRoom = await fetchRoom(joinedSession.room_id);
+      const roomTeams = await fetchTeams(joinedSession.room_id);
+      const foundTeam = roomTeams.find((team: Team) => team.id === joinedSession.team_id);
+
+      if (!foundTeam) {
+        throw new Error("Leader team could not be restored.");
+      }
+
+      setRoom(foundRoom);
+      setTeams(roomTeams);
+      setLeaderTeam({ ...foundTeam, joined_at: joinedSession.joined_at });
       setMode("leader");
       queueRoomRefresh(foundRoom.id, 0);
       if (typeof window !== "undefined") {
@@ -235,7 +261,8 @@ export function useGameActions({
           LEADER_SESSION_KEY,
           JSON.stringify({
             roomCode: foundRoom.code,
-            teamCode: teamCodeInput.trim().toUpperCase(),
+            sessionToken: joinedSession.session_token,
+            expiresAt: joinedSession.expires_at,
           })
         );
         const url = new URL(window.location.href);
@@ -416,6 +443,12 @@ export function useGameActions({
     }
     if (pendingVoteTargetId) return;
 
+    const sessionToken = getStoredLeaderSessionToken();
+    if (!sessionToken) {
+      setLoadError("Leader session has expired. Rejoin with your team code.");
+      return;
+    }
+
     const previousVotes = votesForLeader(votes, leaderTeam.id);
     setPendingVoteTargetId(targetTeamId);
     setVotes((current) => {
@@ -435,14 +468,11 @@ export function useGameActions({
       return [...current, optimisticVote];
     });
 
-    const { error } = await supabase.from("votes").upsert(
-      {
-        round_id: activeRound.id,
-        voter_team_id: leaderTeam.id,
-        target_team_id: targetTeamId,
-      },
-      { onConflict: "round_id,voter_team_id" }
-    );
+    const { error } = await supabase.rpc("submit_team_vote", {
+      p_session_token: sessionToken,
+      p_round_id: activeRound.id,
+      p_target_team_id: targetTeamId,
+    });
 
     if (error) {
       setLoadError(error.message);
@@ -477,6 +507,12 @@ export function useGameActions({
     const answerKey = `${activeRound.id}:${questionIndex}:${answer}`;
     if (pendingAnswerKey) return;
 
+    const sessionToken = getStoredLeaderSessionToken();
+    if (!sessionToken) {
+      setLoadError("Leader session has expired. Rejoin with your team code.");
+      return;
+    }
+
     const submittedAt = new Date().toISOString();
     const isCorrect = rapidQuiz ? false : answer === correctAnswer;
     const previousSubmission =
@@ -486,10 +522,10 @@ export function useGameActions({
           submission.round_id === activeRound.id &&
           submission.question_index === questionIndex
       ) ?? null;
-    if (rapidQuiz && previousSubmission) return;
+    if (previousSubmission) return;
 
     const optimistic = {
-      id: previousSubmission?.id ?? `optimistic-answer-${leaderTeam.id}-${questionIndex}`,
+      id: `optimistic-answer-${leaderTeam.id}-${questionIndex}`,
       round_id: activeRound.id,
       team_id: leaderTeam.id,
       question_index: questionIndex,
@@ -499,60 +535,26 @@ export function useGameActions({
     };
 
     setPendingAnswerKey(answerKey);
-    setAnswerSubmissions((current) => {
-      if (
-        current.some(
-          (submission) =>
-            submission.team_id === leaderTeam.id &&
-            submission.round_id === activeRound.id &&
-            submission.question_index === questionIndex
-        )
-      ) {
-        return current.map((submission) =>
-          submission.team_id === leaderTeam.id &&
-          submission.round_id === activeRound.id &&
-          submission.question_index === questionIndex
-            ? optimistic
-            : submission
-        );
-      }
+    setAnswerSubmissions((current) => [...current, optimistic]);
 
-      return [...current, optimistic];
+    const { error } = await supabase.rpc("submit_team_answer", {
+      p_session_token: sessionToken,
+      p_round_id: activeRound.id,
+      p_answer: answer,
     });
-
-    const { error } = await supabase.from("answer_submissions").upsert(
-      {
-        round_id: activeRound.id,
-        team_id: leaderTeam.id,
-        question_index: questionIndex,
-        answer,
-        is_correct: isCorrect,
-        submitted_at: submittedAt,
-      },
-      { onConflict: "round_id,team_id,question_index" }
-    );
 
     if (error) {
       setLoadError(error.message);
-      setAnswerSubmissions((current) => {
-        if (previousSubmission) {
-          return current.map((submission) =>
-            submission.team_id === leaderTeam.id &&
-            submission.round_id === activeRound.id &&
-            submission.question_index === questionIndex
-              ? previousSubmission
-              : submission
-          );
-        }
-        return current.filter(
+      setAnswerSubmissions((current) =>
+        current.filter(
           (submission) =>
             !(
               submission.team_id === leaderTeam.id &&
               submission.round_id === activeRound.id &&
               submission.question_index === questionIndex
             )
-        );
-      });
+        )
+      );
       setPendingAnswerKey(null);
       return;
     }

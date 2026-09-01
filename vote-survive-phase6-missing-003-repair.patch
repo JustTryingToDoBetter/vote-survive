@@ -1,0 +1,357 @@
+diff --git a/supabase/migrations/202609010003_challenge_engine.sql b/supabase/migrations/202609010003_challenge_engine.sql
+new file mode 100644
+index 0000000..d86dc09
+--- /dev/null
++++ b/supabase/migrations/202609010003_challenge_engine.sql
+@@ -0,0 +1,351 @@
++alter table public.rounds
++  add column if not exists rival_team_id uuid references public.teams(id) on delete set null,
++  add column if not exists challenge_config jsonb,
++  add column if not exists challenge_winner_team_id uuid references public.teams(id) on delete set null,
++  add column if not exists challenge_resolved_at timestamptz;
++
++alter table public.rounds
++  drop constraint if exists rounds_distinct_matchup_teams_check;
++
++alter table public.rounds
++  add constraint rounds_distinct_matchup_teams_check
++  check (rival_team_id is null or target_team_id is null or rival_team_id <> target_team_id)
++  not valid;
++
++alter table public.rounds
++  validate constraint rounds_distinct_matchup_teams_check;
++
++alter table public.rounds
++  drop constraint if exists rounds_challenge_config_object_check;
++
++alter table public.rounds
++  add constraint rounds_challenge_config_object_check
++  check (challenge_config is null or jsonb_typeof(challenge_config) = 'object')
++  not valid;
++
++alter table public.rounds
++  validate constraint rounds_challenge_config_object_check;
++
++create index if not exists rounds_rival_team_id_idx
++  on public.rounds(rival_team_id);
++
++create or replace function public.default_challenge_config(p_round_type text)
++returns jsonb
++language sql
++immutable
++set search_path = public
++as $$
++  select case p_round_type
++    when 'voting' then jsonb_build_object(
++      'participantMode', 'head_to_head',
++      'participantCount', 2,
++      'durationSeconds', 30,
++      'matchupRule', 'vote_runner_up',
++      'winCondition', 'Host declares the winner of the pressure showdown.',
++      'scoringMode', 'winner_points',
++      'winnerPoints', 10,
++      'runnerUpPoints', 5
++    )
++    when 'steal' then jsonb_build_object(
++      'participantMode', 'head_to_head',
++      'participantCount', 2,
++      'durationSeconds', 30,
++      'matchupRule', 'vote_runner_up',
++      'winCondition', 'Pressure team wins to steal 5 points; rival wins to block the steal.',
++      'scoringMode', 'steal',
++      'stealAmount', 5
++    )
++    when 'quiz_burst' then jsonb_build_object(
++      'participantMode', 'all_teams',
++      'participantCount', null,
++      'durationSeconds', null,
++      'matchupRule', 'none',
++      'winCondition', 'Correct answers are ranked by submission time.',
++      'scoringMode', 'quiz'
++    )
++    when 'bible_speed' then jsonb_build_object(
++      'participantMode', 'all_teams',
++      'participantCount', null,
++      'durationSeconds', null,
++      'matchupRule', 'none',
++      'winCondition', 'Correct answers are ranked by submission time.',
++      'scoringMode', 'quiz'
++    )
++    else jsonb_build_object(
++      'participantMode', 'all_teams',
++      'participantCount', null,
++      'durationSeconds', null,
++      'matchupRule', 'none',
++      'winCondition', 'Host judges the challenge using the round instructions.',
++      'scoringMode', 'manual'
++    )
++  end;
++$$;
++
++update public.rounds
++set challenge_config = public.default_challenge_config(round_type)
++where challenge_config is null;
++
++create or replace function public.validate_round_challenge_team_links()
++returns trigger
++language plpgsql
++security definer
++set search_path = public
++as $$
++begin
++  if new.target_team_id is not null and not exists (
++    select 1 from public.teams
++    where teams.id = new.target_team_id
++      and teams.room_id = new.room_id
++  ) then
++    raise exception 'Pressure team must belong to the round room.';
++  end if;
++
++  if new.rival_team_id is not null and not exists (
++    select 1 from public.teams
++    where teams.id = new.rival_team_id
++      and teams.room_id = new.room_id
++  ) then
++    raise exception 'Rival team must belong to the round room.';
++  end if;
++
++  if new.challenge_winner_team_id is not null and not exists (
++    select 1 from public.teams
++    where teams.id = new.challenge_winner_team_id
++      and teams.room_id = new.room_id
++  ) then
++    raise exception 'Challenge winner must belong to the round room.';
++  end if;
++
++  return new;
++end;
++$$;
++
++drop trigger if exists validate_round_challenge_team_links_trigger
++  on public.rounds;
++
++create trigger validate_round_challenge_team_links_trigger
++  before insert or update of target_team_id, rival_team_id, challenge_winner_team_id
++  on public.rounds
++  for each row
++  execute function public.validate_round_challenge_team_links();
++
++create or replace function public.host_set_round_rival(
++  p_round_id uuid,
++  p_rival_team_id uuid
++)
++returns uuid
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_round_room_id uuid;
++  v_target_team_id uuid;
++  v_round_status text;
++  v_resolved_at timestamptz;
++begin
++  select room_id, target_team_id, status, challenge_resolved_at
++  into v_round_room_id, v_target_team_id, v_round_status, v_resolved_at
++  from public.rounds
++  where id = p_round_id
++  for update;
++
++  if v_round_room_id is null then
++    raise exception 'Round not found.';
++  end if;
++
++  if not public.is_room_host(v_round_room_id) then
++    raise exception 'Host authorization failed.';
++  end if;
++
++  if v_round_status not in ('locked', 'scoring') then
++    raise exception 'Rival can only be changed after the matchup is locked.';
++  end if;
++
++  if v_resolved_at is not null then
++    raise exception 'Resolved challenges cannot change rivals.';
++  end if;
++
++  if v_target_team_id is null then
++    raise exception 'Choose a pressure team before assigning a rival.';
++  end if;
++
++  if p_rival_team_id = v_target_team_id then
++    raise exception 'Pressure team cannot be its own rival.';
++  end if;
++
++  if not exists (
++    select 1 from public.teams
++    where teams.id = p_rival_team_id
++      and teams.room_id = v_round_room_id
++  ) then
++    raise exception 'Rival team must belong to this room.';
++  end if;
++
++  update public.rounds
++  set rival_team_id = p_rival_team_id
++  where id = p_round_id;
++
++  return p_rival_team_id;
++end;
++$$;
++
++create or replace function public.host_resolve_challenge(
++  p_round_id uuid,
++  p_winner_team_id uuid
++)
++returns table (
++  resolved_round_id uuid,
++  winner_team_id uuid,
++  loser_team_id uuid,
++  scoring_mode text,
++  transferred_amount integer,
++  resolved_at timestamptz
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_round public.rounds%rowtype;
++  v_config jsonb;
++  v_loser_team_id uuid;
++  v_scoring_mode text;
++  v_winner_points integer;
++  v_runner_up_points integer;
++  v_steal_amount integer;
++  v_loser_score integer;
++  v_transfer_amount integer := 0;
++  v_resolved_at timestamptz := now();
++  v_dedupe_base text;
++begin
++  select *
++  into v_round
++  from public.rounds
++  where id = p_round_id
++  for update;
++
++  if not found then
++    raise exception 'Round not found.';
++  end if;
++
++  if not public.is_room_host(v_round.room_id) then
++    raise exception 'Host authorization failed.';
++  end if;
++
++  if v_round.status <> 'scoring' then
++    raise exception 'Challenge can only be resolved during scoring.';
++  end if;
++
++  if v_round.challenge_resolved_at is not null then
++    raise exception 'Challenge has already been resolved.';
++  end if;
++
++  if v_round.target_team_id is null or v_round.rival_team_id is null then
++    raise exception 'Challenge requires both a pressure team and a rival.';
++  end if;
++
++  if p_winner_team_id not in (v_round.target_team_id, v_round.rival_team_id) then
++    raise exception 'Winner must be one of the assigned matchup teams.';
++  end if;
++
++  v_loser_team_id := case
++    when p_winner_team_id = v_round.target_team_id then v_round.rival_team_id
++    else v_round.target_team_id
++  end;
++
++  v_config := coalesce(
++    v_round.challenge_config,
++    public.default_challenge_config(v_round.round_type)
++  );
++  v_scoring_mode := coalesce(v_config ->> 'scoringMode', 'manual');
++  v_dedupe_base := 'challenge:' || p_round_id::text;
++
++  if v_scoring_mode = 'winner_points' then
++    v_winner_points := greatest(coalesce((v_config ->> 'winnerPoints')::integer, 10), 0);
++    v_runner_up_points := greatest(coalesce((v_config ->> 'runnerUpPoints')::integer, 5), 0);
++
++    if v_winner_points > 0 then
++      perform public.apply_score_event(
++        v_round.room_id,
++        p_winner_team_id,
++        v_winner_points,
++        'Challenge winner',
++        p_round_id,
++        v_dedupe_base || ':winner'
++      );
++    end if;
++
++    if v_runner_up_points > 0 then
++      perform public.apply_score_event(
++        v_round.room_id,
++        v_loser_team_id,
++        v_runner_up_points,
++        'Challenge runner-up',
++        p_round_id,
++        v_dedupe_base || ':runner-up'
++      );
++    end if;
++  elsif v_scoring_mode = 'steal' then
++    if p_winner_team_id = v_round.target_team_id then
++      v_steal_amount := greatest(coalesce((v_config ->> 'stealAmount')::integer, 5), 0);
++
++      select score
++      into v_loser_score
++      from public.teams
++      where id = v_loser_team_id
++      for update;
++
++      v_transfer_amount := least(v_steal_amount, greatest(coalesce(v_loser_score, 0), 0));
++
++      if v_transfer_amount > 0 then
++        perform public.apply_score_event(
++          v_round.room_id,
++          v_loser_team_id,
++          -v_transfer_amount,
++          'Challenge steal debit',
++          p_round_id,
++          v_dedupe_base || ':steal:debit'
++        );
++
++        perform public.apply_score_event(
++          v_round.room_id,
++          p_winner_team_id,
++          v_transfer_amount,
++          'Challenge steal credit',
++          p_round_id,
++          v_dedupe_base || ':steal:credit'
++        );
++      end if;
++    end if;
++  elsif v_scoring_mode <> 'manual' then
++    raise exception 'Unsupported challenge scoring mode: %', v_scoring_mode;
++  end if;
++
++  update public.rounds
++  set
++    challenge_winner_team_id = p_winner_team_id,
++    challenge_resolved_at = v_resolved_at
++  where id = p_round_id;
++
++  return query
++  select
++    p_round_id,
++    p_winner_team_id,
++    v_loser_team_id,
++    v_scoring_mode,
++    v_transfer_amount,
++    v_resolved_at;
++end;
++$$;
++
++revoke execute on function public.host_set_round_rival(uuid, uuid)
++  from public;
++revoke execute on function public.host_resolve_challenge(uuid, uuid)
++  from public;
++
++grant execute on function public.host_set_round_rival(uuid, uuid)
++  to anon, authenticated;
++grant execute on function public.host_resolve_challenge(uuid, uuid)
++  to anon, authenticated;

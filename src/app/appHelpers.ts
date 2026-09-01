@@ -39,10 +39,10 @@ export const LEADER_SESSION_KEY = "vote-survive-leader-session";
 
 export function generateCode(length = 5) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  return Array.from(
-    { length },
-    () => alphabet[Math.floor(Math.random() * alphabet.length)]
-  ).join("");
+  const values = new Uint32Array(length);
+  crypto.getRandomValues(values);
+
+  return Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
 }
 
 export function createDefaultDrafts() {
@@ -53,7 +53,7 @@ export function createDefaultDrafts() {
     avatarEmoji: preset.avatarEmoji,
     avatarImage: preset.avatarImage,
     color: preset.color,
-    leaderCode: generateCode(4),
+    leaderCode: generateCode(6),
   }));
 }
 
