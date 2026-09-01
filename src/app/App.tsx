@@ -240,7 +240,7 @@ export default function App() {
     if (secondsLeft > 5 || secondsLeft === 0) {
       lastCountdownSoundRef.current = null;
     }
-  }, [session.activeRound?.status, secondsLeft, sound]);
+  }, [session.activeRound, session.activeRound?.status, secondsLeft, sound]);
 
   useEffect(() => {
     if (!session.activeRound || session.activeRound.status !== "voting" || secondsLeft > 0) {
@@ -328,6 +328,9 @@ export default function App() {
           beginRound={actions.beginRound}
           lockVotes={actions.lockVotes}
           openScoring={actions.openScoring}
+          setRivalTeam={actions.setRivalTeam}
+          resolveChallenge={actions.resolveChallenge}
+          pendingChallengeAction={actions.pendingChallengeAction}
           applyScore={actions.applyScore}
           completeRound={actions.completeRound}
           undoLastScore={actions.undoLastScore}

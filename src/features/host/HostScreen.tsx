@@ -45,6 +45,9 @@ export type HostScreenProps = {
   beginRound: () => void;
   lockVotes: () => void;
   openScoring: () => void;
+  setRivalTeam: (teamId: string) => void;
+  resolveChallenge: (winnerTeamId: string) => void;
+  pendingChallengeAction: string | null;
   applyScore: (teamId: string, delta: number, reason: string) => void;
   completeRound: () => void;
   undoLastScore: () => void;
@@ -177,6 +180,9 @@ export function HostScreen(props: HostScreenProps) {
             setCustomTimerInput={props.setCustomTimerInput}
             startRound={props.startRound}
             lockVotes={props.lockVotes}
+            setRivalTeam={props.setRivalTeam}
+            resolveChallenge={props.resolveChallenge}
+            pendingChallengeAction={props.pendingChallengeAction}
             completeRound={props.completeRound}
             applyScore={props.applyScore}
             quizActions={props.quizActions}

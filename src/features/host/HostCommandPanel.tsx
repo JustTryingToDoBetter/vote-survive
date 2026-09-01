@@ -11,6 +11,7 @@ import { AnimatedVoteBar, ChallengeRevealCard } from "../audience/ProjectorStage
 import { TimerRing } from "../shared/TimerRing";
 import { QuizHostPanel } from "../quiz/QuizHostPanel";
 import { isRapidQuizRound } from "../quiz/quizEngine";
+import { ChallengeControlPanel } from "../challenge/ChallengeControlPanel";
 import { HostShowModePanel } from "./HostShowModePanel";
 import type {
   AnswerSubmission,
@@ -42,6 +43,9 @@ type HostCommandPanelProps = {
   setCustomTimerInput: (value: string) => void;
   startRound: (type?: RoundType, definition?: RoundDefinition) => Promise<boolean>;
   lockVotes: () => void;
+  setRivalTeam: (teamId: string) => void;
+  resolveChallenge: (winnerTeamId: string) => void;
+  pendingChallengeAction: string | null;
   completeRound: () => void;
   applyScore: (teamId: string, delta: number, reason: string) => void;
   quizActions: {
@@ -230,6 +234,20 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
             rivalTeam={props.rivalTeam}
           />
         )}
+
+        {props.activeRound &&
+          ["locked", "scoring"].includes(props.activeRound.status) &&
+          !isQuizRound && (
+            <ChallengeControlPanel
+              round={props.activeRound}
+              teams={props.teams}
+              targetTeam={props.targetTeam}
+              rivalTeam={props.rivalTeam}
+              pendingAction={props.pendingChallengeAction}
+              setRivalTeam={props.setRivalTeam}
+              resolveChallenge={props.resolveChallenge}
+            />
+          )}
       </div>
 
       {props.activeRound &&

@@ -16,6 +16,13 @@ import {
   toPublicQuizQuestion,
 } from "../features/quiz/quizEngine";
 import { roundRequiresVoting } from "../features/gameflow/gamePhases";
+import {
+  challengeConfigForRoundType,
+  chooseAutomaticRival,
+  getChallengeConfig,
+  requiresChallengeResolution,
+  requiresRival,
+} from "../features/challenge/challengeEngine";
 import { createHostSupabase, getHostSupabase, supabase } from "../lib/supabase";
 import {
   fetchRoomByCode,
@@ -130,6 +137,7 @@ export function useGameActions({
   const [scoringTeamIds, setScoringTeamIds] = useState<Record<string, boolean>>({});
   const [pendingVoteTargetId, setPendingVoteTargetId] = useState<string | null>(null);
   const [pendingAnswerKey, setPendingAnswerKey] = useState<string | null>(null);
+  const [pendingChallengeAction, setPendingChallengeAction] = useState<string | null>(null);
   const scoringLocksRef = useRef<Record<string, boolean>>({});
 
   async function createRoom() {
@@ -249,6 +257,8 @@ export function useGameActions({
       const hostSupabase = getHostSupabase();
       const quizQuestionSet = definition.questionSet ?? null;
       const publicQuestionSet = quizQuestionSet?.map(toPublicQuizQuestion) ?? null;
+      const challengeConfig =
+        definition.challengeConfig ?? challengeConfigForRoundType(definition.type);
       const selectedTimer =
         Number(customTimerInput) > 0 ? Number(customTimerInput) : timerDuration;
 
@@ -264,6 +274,10 @@ export function useGameActions({
         instructions: definition.instructions,
         twist: definition.twist ?? null,
         status,
+        rival_team_id: null,
+        challenge_config: challengeConfig,
+        challenge_winner_team_id: null,
+        challenge_resolved_at: null,
         is_final: definition.isFinal ?? false,
         timer_seconds: definition.requiresVoting ? selectedTimer : null,
         answer_options: definition.answerOptions ?? null,
@@ -295,6 +309,10 @@ export function useGameActions({
         delete legacyPayload.question_status;
         delete legacyPayload.question_started_at;
         delete legacyPayload.started_at;
+        delete legacyPayload.rival_team_id;
+        delete legacyPayload.challenge_config;
+        delete legacyPayload.challenge_winner_team_id;
+        delete legacyPayload.challenge_resolved_at;
         const { error: retryError } = await hostSupabase
           .from("rounds")
           .insert(legacyPayload);
@@ -544,6 +562,7 @@ export function useGameActions({
     if (activeRound.status !== "voting" && activeRound.status !== "live") return;
 
     let targetTeamId = activeRound.target_team_id;
+    let rivalTeamId = activeRound.rival_team_id ?? null;
 
     if (activeRound.status === "voting") {
       const highestCount = Math.max(0, ...sortedVoteCounts.map((entry) => entry.count));
@@ -570,12 +589,24 @@ export function useGameActions({
       }
     }
 
+    const config = getChallengeConfig(activeRound);
+    if (targetTeamId && requiresRival(config)) {
+      rivalTeamId =
+        chooseAutomaticRival({
+          config,
+          targetTeamId,
+          teams,
+          voteCounts: sortedVoteCounts,
+        })?.id ?? null;
+    }
+
     const hostSupabase = getHostSupabase();
     const { error } = await hostSupabase
       .from("rounds")
       .update({
         status: "locked",
         target_team_id: targetTeamId,
+        rival_team_id: rivalTeamId,
       })
       .eq("id", activeRound.id);
 
@@ -584,16 +615,17 @@ export function useGameActions({
       return;
     }
 
+    const patch = {
+      status: "locked" as const,
+      target_team_id: targetTeamId,
+      rival_team_id: rivalTeamId,
+    };
     setActiveRound((current) =>
-      current?.id === activeRound.id
-        ? { ...current, status: "locked", target_team_id: targetTeamId }
-        : current
+      current?.id === activeRound.id ? { ...current, ...patch } : current
     );
     setRounds((current) =>
       current.map((round) =>
-        round.id === activeRound.id
-          ? { ...round, status: "locked", target_team_id: targetTeamId }
-          : round
+        round.id === activeRound.id ? { ...round, ...patch } : round
       )
     );
     sound.play("reveal");
@@ -604,6 +636,12 @@ export function useGameActions({
 
     if (roundRequiresVoting(activeRound.round_type) && !activeRound.target_team_id) {
       setLoadError("Choose a pressure team before opening scoring.");
+      return;
+    }
+
+    const config = getChallengeConfig(activeRound);
+    if (requiresRival(config) && !activeRound.rival_team_id) {
+      setLoadError("Choose a rival before opening scoring.");
       return;
     }
 
@@ -626,6 +664,77 @@ export function useGameActions({
         round.id === activeRound.id ? { ...round, status: "scoring" } : round
       )
     );
+  }
+
+  async function setRivalTeam(rivalTeamId: string) {
+    if (
+      !activeRound ||
+      !activeRound.target_team_id ||
+      activeRound.challenge_resolved_at ||
+      pendingChallengeAction
+    ) {
+      return;
+    }
+
+    setPendingChallengeAction("set-rival");
+    setLoadError(null);
+
+    try {
+      const hostSupabase = getHostSupabase();
+      const { error } = await hostSupabase.rpc("host_set_round_rival", {
+        p_round_id: activeRound.id,
+        p_rival_team_id: rivalTeamId,
+      });
+
+      if (error) throw error;
+
+      setActiveRound((current) =>
+        current?.id === activeRound.id ? { ...current, rival_team_id: rivalTeamId } : current
+      );
+      setRounds((current) =>
+        current.map((round) =>
+          round.id === activeRound.id ? { ...round, rival_team_id: rivalTeamId } : round
+        )
+      );
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to set rival.");
+    } finally {
+      setPendingChallengeAction(null);
+    }
+  }
+
+  async function resolveChallenge(winnerTeamId: string) {
+    if (
+      !room ||
+      !activeRound ||
+      activeRound.status !== "scoring" ||
+      activeRound.challenge_resolved_at ||
+      pendingChallengeAction
+    ) {
+      return;
+    }
+
+    setPendingChallengeAction(`resolve:${winnerTeamId}`);
+    setLoadError(null);
+
+    try {
+      const hostSupabase = getHostSupabase();
+      const { error } = await hostSupabase.rpc("host_resolve_challenge", {
+        p_round_id: activeRound.id,
+        p_winner_team_id: winnerTeamId,
+      });
+
+      if (error) throw error;
+
+      await refreshRoomData(room.id);
+      sound.play("score");
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Unable to resolve challenge."
+      );
+    } finally {
+      setPendingChallengeAction(null);
+    }
   }
 
   async function applyScore(
@@ -766,6 +875,12 @@ export function useGameActions({
     if (!activeRound) return;
     if (activeRound.status !== "scoring") return;
 
+    const config = getChallengeConfig(activeRound);
+    if (requiresChallengeResolution(config) && !activeRound.challenge_resolved_at) {
+      setLoadError("Record the challenge winner before completing this round.");
+      return;
+    }
+
     const hostSupabase = getHostSupabase();
     const { error } = await hostSupabase
       .from("rounds")
@@ -898,6 +1013,7 @@ export function useGameActions({
     scoringTeamIds,
     pendingVoteTargetId,
     pendingAnswerKey,
+    pendingChallengeAction,
     createRoom,
     joinAsLeader,
     startRound,
@@ -906,6 +1022,8 @@ export function useGameActions({
     submitAnswer,
     lockVotes,
     openScoring,
+    setRivalTeam,
+    resolveChallenge,
     applyScore,
     transferScore,
     undoLastScore,

@@ -36,6 +36,26 @@ export type QuestionStatus =
 export type QuizCategory = "bible_knowledge" | "bible_reference";
 export type QuizDifficulty = "easy" | "medium" | "hard";
 
+export type ChallengeParticipantMode = "all_teams" | "head_to_head";
+export type ChallengeMatchupRule =
+  | "none"
+  | "vote_runner_up"
+  | "leaderboard_leader"
+  | "host_choice";
+export type ChallengeScoringMode = "manual" | "winner_points" | "steal" | "quiz";
+
+export type ChallengeConfig = {
+  participantMode: ChallengeParticipantMode;
+  participantCount: number | null;
+  durationSeconds: number | null;
+  matchupRule: ChallengeMatchupRule;
+  winCondition: string;
+  scoringMode: ChallengeScoringMode;
+  winnerPoints?: number;
+  runnerUpPoints?: number;
+  stealAmount?: number;
+};
+
 export type QuizQuestion = {
   id: string;
   prompt: string;
@@ -126,6 +146,10 @@ export type RoundRecord = {
   instructions?: string | null;
   status: RoundStatus;
   target_team_id: string | null;
+  rival_team_id?: string | null;
+  challenge_config?: ChallengeConfig | null;
+  challenge_winner_team_id?: string | null;
+  challenge_resolved_at?: string | null;
   is_final?: boolean | null;
   timer_seconds?: number | null;
   answer_options?: string[] | null;
@@ -147,6 +171,7 @@ export type RoundDefinition = {
   scoringGuide: string;
   twist?: string;
   requiresVoting: boolean;
+  challengeConfig?: ChallengeConfig;
   isFinal?: boolean;
   answerOptions?: string[];
   correctAnswer?: string;

@@ -1,6 +1,7 @@
 import { roundTypeLabels } from "../data/gameContent";
 import { DEFAULT_TEAMS } from "../data/teamPresets";
 import type {
+  ChallengeConfig,
   QuestionStatus,
   QuizQuestion,
   RoundRecord,
@@ -8,6 +9,30 @@ import type {
   RoundType,
   Team,
 } from "../lib/types";
+
+function isChallengeConfig(value: unknown): value is ChallengeConfig {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const config = value as Record<string, unknown>;
+  const participantMode = config.participantMode;
+  const matchupRule = config.matchupRule;
+  const scoringMode = config.scoringMode;
+
+  return (
+    (participantMode === "all_teams" || participantMode === "head_to_head") &&
+    (matchupRule === "none" ||
+      matchupRule === "vote_runner_up" ||
+      matchupRule === "leaderboard_leader" ||
+      matchupRule === "host_choice") &&
+    (scoringMode === "manual" ||
+      scoringMode === "winner_points" ||
+      scoringMode === "steal" ||
+      scoringMode === "quiz") &&
+    typeof config.winCondition === "string"
+  );
+}
 
 export const HOST_SESSION_KEY = "vote-survive-host-session";
 export const LEADER_SESSION_KEY = "vote-survive-leader-session";
@@ -57,6 +82,14 @@ export function toRoundRecord(row: Record<string, unknown>): RoundRecord {
       "Follow the host prompt and score every team.",
     status: (row.status as RoundStatus | undefined) ?? "lobby",
     target_team_id: (row.target_team_id as string | null | undefined) ?? null,
+    rival_team_id: (row.rival_team_id as string | null | undefined) ?? null,
+    challenge_config: isChallengeConfig(row.challenge_config)
+      ? (row.challenge_config as ChallengeConfig)
+      : null,
+    challenge_winner_team_id:
+      (row.challenge_winner_team_id as string | null | undefined) ?? null,
+    challenge_resolved_at:
+      (row.challenge_resolved_at as string | null | undefined) ?? null,
     is_final:
       (row.is_final as boolean | null | undefined) ??
       roundType === "final_double",
@@ -87,6 +120,10 @@ export function toLegacyRoundPayload(payload: {
   challenge: string;
   status: RoundStatus;
   target_team_id?: string | null;
+  rival_team_id?: string | null;
+  challenge_config?: Record<string, unknown> | null;
+  challenge_winner_team_id?: string | null;
+  challenge_resolved_at?: string | null;
 }) {
   return {
     room_id: payload.room_id,
@@ -94,6 +131,10 @@ export function toLegacyRoundPayload(payload: {
     challenge: payload.challenge,
     status: payload.status,
     target_team_id: payload.target_team_id ?? null,
+    rival_team_id: payload.rival_team_id ?? null,
+    challenge_config: payload.challenge_config ?? null,
+    challenge_winner_team_id: payload.challenge_winner_team_id ?? null,
+    challenge_resolved_at: payload.challenge_resolved_at ?? null,
   };
 }
 

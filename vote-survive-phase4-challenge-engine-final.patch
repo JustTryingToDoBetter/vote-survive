@@ -1,0 +1,1157 @@
+diff --git a/src/lib/types.ts b/src/lib/types.ts
+--- a/src/lib/types.ts
++++ b/src/lib/types.ts
+@@ -31,4 +31,24 @@
+ export type QuizCategory = "bible_knowledge" | "bible_reference";
+ export type QuizDifficulty = "easy" | "medium" | "hard";
+ 
++export type ChallengeParticipantMode = "all_teams" | "head_to_head";
++export type ChallengeMatchupRule =
++  | "none"
++  | "vote_runner_up"
++  | "leaderboard_leader"
++  | "host_choice";
++export type ChallengeScoringMode = "manual" | "winner_points" | "steal" | "quiz";
++
++export type ChallengeConfig = {
++  participantMode: ChallengeParticipantMode;
++  participantCount: number | null;
++  durationSeconds: number | null;
++  matchupRule: ChallengeMatchupRule;
++  winCondition: string;
++  scoringMode: ChallengeScoringMode;
++  winnerPoints?: number;
++  runnerUpPoints?: number;
++  stealAmount?: number;
++};
++
+ export type QuizQuestion = {
+@@ -105,4 +105,8 @@
+   status: RoundStatus;
+   target_team_id: string | null;
++  rival_team_id?: string | null;
++  challenge_config?: ChallengeConfig | null;
++  challenge_winner_team_id?: string | null;
++  challenge_resolved_at?: string | null;
+   is_final?: boolean | null;
+   timer_seconds?: number | null;
+@@ -139,3 +139,4 @@
+   twist?: string;
+   requiresVoting: boolean;
++  challengeConfig?: ChallengeConfig;
+   isFinal?: boolean;
+diff --git a/src/features/challenge/challengeEngine.ts b/src/features/challenge/challengeEngine.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/challenge/challengeEngine.ts
+@@ -0,0 +1,144 @@
++import type {
++  ChallengeConfig,
++  RoundRecord,
++  RoundType,
++  Team,
++} from "../../lib/types";
++
++const DEFAULT_CONFIGS: Record<RoundType, ChallengeConfig> = {
++  voting: {
++    participantMode: "head_to_head",
++    participantCount: 2,
++    durationSeconds: 30,
++    matchupRule: "vote_runner_up",
++    winCondition: "Host declares the winner of the pressure showdown.",
++    scoringMode: "winner_points",
++    winnerPoints: 10,
++    runnerUpPoints: 5,
++  },
++  all_play: {
++    participantMode: "all_teams",
++    participantCount: null,
++    durationSeconds: null,
++    matchupRule: "none",
++    winCondition: "Host judges the room-wide challenge using the round instructions.",
++    scoringMode: "manual",
++  },
++  quiz_burst: {
++    participantMode: "all_teams",
++    participantCount: null,
++    durationSeconds: null,
++    matchupRule: "none",
++    winCondition: "Correct answers are ranked by submission time.",
++    scoringMode: "quiz",
++  },
++  bible_speed: {
++    participantMode: "all_teams",
++    participantCount: null,
++    durationSeconds: null,
++    matchupRule: "none",
++    winCondition: "Correct answers are ranked by submission time.",
++    scoringMode: "quiz",
++  },
++  dance_battle: {
++    participantMode: "all_teams",
++    participantCount: null,
++    durationSeconds: null,
++    matchupRule: "none",
++    winCondition: "Host judges execution, creativity, and energy.",
++    scoringMode: "manual",
++  },
++  steal: {
++    participantMode: "head_to_head",
++    participantCount: 2,
++    durationSeconds: 30,
++    matchupRule: "vote_runner_up",
++    winCondition: "Pressure team wins to steal 5 points; rival wins to block the steal.",
++    scoringMode: "steal",
++    stealAmount: 5,
++  },
++  final_double: {
++    participantMode: "all_teams",
++    participantCount: null,
++    durationSeconds: null,
++    matchupRule: "none",
++    winCondition: "Host judges the final challenge and scores each team manually.",
++    scoringMode: "manual",
++  },
++};
++
++export function challengeConfigForRoundType(roundType: RoundType): ChallengeConfig {
++  return { ...DEFAULT_CONFIGS[roundType] };
++}
++
++export function getChallengeConfig(
++  round: Pick<RoundRecord, "round_type" | "challenge_config">
++): ChallengeConfig {
++  return round.challenge_config ?? challengeConfigForRoundType(round.round_type);
++}
++
++export function requiresRival(config: ChallengeConfig) {
++  return config.participantMode === "head_to_head";
++}
++
++export function requiresChallengeResolution(config: ChallengeConfig) {
++  return (
++    config.participantMode === "head_to_head" &&
++    (config.scoringMode === "winner_points" || config.scoringMode === "steal")
++  );
++}
++
++export function getEligibleRivals(teams: Team[], targetTeamId: string | null | undefined) {
++  if (!targetTeamId) return [];
++  return teams.filter((team) => team.id !== targetTeamId);
++}
++
++export function chooseAutomaticRival(args: {
++  config: ChallengeConfig;
++  targetTeamId: string;
++  teams: Team[];
++  voteCounts: { team: Team; count: number }[];
++}): Team | null {
++  const eligible = getEligibleRivals(args.teams, args.targetTeamId);
++  if (eligible.length === 0) return null;
++
++  if (args.config.matchupRule === "host_choice") return null;
++
++  if (args.config.matchupRule === "vote_runner_up") {
++    const votedRival = [...args.voteCounts]
++      .filter(
++        (entry) =>
++          entry.team.id !== args.targetTeamId &&
++          entry.count > 0 &&
++          eligible.some((team) => team.id === entry.team.id)
++      )
++      .sort((a, b) => b.count - a.count || b.team.score - a.team.score)[0]?.team;
++
++    if (votedRival) return votedRival;
++  }
++
++  if (
++    args.config.matchupRule === "leaderboard_leader" ||
++    args.config.matchupRule === "vote_runner_up"
++  ) {
++    return [...eligible].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))[0];
++  }
++
++  return null;
++}
++
++export function describeChallengeScoring(config: ChallengeConfig) {
++  if (config.scoringMode === "winner_points") {
++    return `Winner +${config.winnerPoints ?? 10}; other matchup team +${config.runnerUpPoints ?? 5}.`;
++  }
++
++  if (config.scoringMode === "steal") {
++    return `Pressure-team win steals up to ${config.stealAmount ?? 5} points from the rival. Rival win blocks the steal.`;
++  }
++
++  if (config.scoringMode === "quiz") {
++    return "Quiz scoring is handled by the question engine.";
++  }
++
++  return "Host scores this challenge manually.";
++}
+diff --git a/src/features/challenge/challengeEngine.test.ts b/src/features/challenge/challengeEngine.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/challenge/challengeEngine.test.ts
+@@ -0,0 +1,89 @@
++import { describe, expect, it } from "vitest";
++import type { Team } from "../../lib/types";
++import {
++  challengeConfigForRoundType,
++  chooseAutomaticRival,
++  describeChallengeScoring,
++  getEligibleRivals,
++  requiresChallengeResolution,
++} from "./challengeEngine";
++
++function team(id: string, score: number): Team {
++  return {
++    id,
++    room_id: "room-1",
++    name: id,
++    leader_code: id,
++    score,
++  };
++}
++
++describe("challengeEngine", () => {
++  it("defines steal rounds as one atomic 5-point head-to-head steal", () => {
++    const config = challengeConfigForRoundType("steal");
++
++    expect(config.participantMode).toBe("head_to_head");
++    expect(config.matchupRule).toBe("vote_runner_up");
++    expect(config.scoringMode).toBe("steal");
++    expect(config.stealAmount).toBe(5);
++    expect(requiresChallengeResolution(config)).toBe(true);
++  });
++
++  it("uses the vote runner-up as the automatic rival", () => {
++    const target = team("target", 4);
++    const runnerUp = team("runner-up", 2);
++    const leader = team("leader", 30);
++    const config = challengeConfigForRoundType("voting");
++
++    expect(
++      chooseAutomaticRival({
++        config,
++        targetTeamId: target.id,
++        teams: [target, runnerUp, leader],
++        voteCounts: [
++          { team: target, count: 4 },
++          { team: runnerUp, count: 3 },
++          { team: leader, count: 1 },
++        ],
++      })?.id
++    ).toBe("runner-up");
++  });
++
++  it("falls back to the scoreboard leader when nobody else received a vote", () => {
++    const target = team("target", 20);
++    const second = team("second", 8);
++    const leader = team("leader", 30);
++    const config = challengeConfigForRoundType("steal");
++
++    expect(
++      chooseAutomaticRival({
++        config,
++        targetTeamId: target.id,
++        teams: [target, second, leader],
++        voteCounts: [
++          { team: target, count: 4 },
++          { team: second, count: 0 },
++          { team: leader, count: 0 },
++        ],
++      })?.id
++    ).toBe("leader");
++  });
++
++  it("never offers the pressure team as its own rival", () => {
++    const target = team("target", 10);
++    const rival = team("rival", 5);
++
++    expect(getEligibleRivals([target, rival], target.id).map((entry) => entry.id)).toEqual([
++      "rival",
++    ]);
++  });
++
++  it("describes automatic winner and steal scoring without hidden bonuses", () => {
++    expect(describeChallengeScoring(challengeConfigForRoundType("voting"))).toBe(
++      "Winner +10; other matchup team +5."
++    );
++    expect(describeChallengeScoring(challengeConfigForRoundType("steal"))).toContain(
++      "steals up to 5 points"
++    );
++  });
++});
+diff --git a/src/app/appHelpers.ts b/src/app/appHelpers.ts
+--- a/src/app/appHelpers.ts
++++ b/src/app/appHelpers.ts
+@@ -3,4 +3,5 @@
+ import type {
++  ChallengeConfig,
+   QuestionStatus,
+   QuizQuestion,
+   RoundRecord,
+@@ -54,3 +54,10 @@
+     status: (row.status as RoundStatus | undefined) ?? "lobby",
+     target_team_id: (row.target_team_id as string | null | undefined) ?? null,
++    rival_team_id: (row.rival_team_id as string | null | undefined) ?? null,
++    challenge_config:
++      (row.challenge_config as ChallengeConfig | null | undefined) ?? null,
++    challenge_winner_team_id:
++      (row.challenge_winner_team_id as string | null | undefined) ?? null,
++    challenge_resolved_at:
++      (row.challenge_resolved_at as string | null | undefined) ?? null,
+     is_final:
+diff --git a/src/lib/supabaseQueries.ts b/src/lib/supabaseQueries.ts
+--- a/src/lib/supabaseQueries.ts
++++ b/src/lib/supabaseQueries.ts
+@@ -6,7 +6,7 @@
+ export const teamColumns =
+   "id,room_id,name,leader_code,score,joined_at,animal,avatar_emoji,avatar_image,color";
+ export const roundColumns =
+-  "id,room_id,round_number,round_type,title,prompt,question,challenge,scoring_guide,instructions,twist,status,target_team_id,is_final,timer_seconds,answer_options,correct_answer,question_set,current_question_index,question_status,question_started_at,started_at,created_at";
++  "id,room_id,round_number,round_type,title,prompt,question,challenge,scoring_guide,instructions,twist,status,target_team_id,rival_team_id,challenge_config,challenge_winner_team_id,challenge_resolved_at,is_final,timer_seconds,answer_options,correct_answer,question_set,current_question_index,question_status,question_started_at,started_at,created_at";
+ export const voteColumns = "id,round_id,voter_team_id,target_team_id";
+ export const answerColumns =
+   "id,round_id,team_id,question_index,answer,is_correct,submitted_at";
+diff --git a/src/data/gameContent.ts b/src/data/gameContent.ts
+--- a/src/data/gameContent.ts
++++ b/src/data/gameContent.ts
+@@ -42,8 +42,6 @@
+ const votingChallenges = [
+-  "The most-voted team enters a 1v1 showdown against a rival picked by the host.",
+-  "The most-voted team faces the current leaderboard leader in a pressure duel.",
+-  "The most-voted team must nominate one rival and beat them in a fast challenge.",
+-  "The most-voted team gets 30 seconds to defend themselves before the host calls the matchup.",
+-  "The most-voted team plays a sudden-death round. Winner earns points, loser takes a penalty.",
+-  "The most-voted team steps into the spotlight and the host chooses their exact task live.",
++  "Pressure team and assigned rival face a 30-second sudden-death showdown.",
++  "Pressure team and assigned rival get one fast challenge. Host declares one winner.",
++  "Captains from the pressure team and assigned rival face a 30-second pressure duel.",
++  "The assigned matchup gets one clean attempt each. Best execution wins.",
+ ];
+@@ -98,17 +98,6 @@
+ const twists = [
+-  "Twist: Crowd bonus. The loudest support gets +2.",
+-  "Twist: Mercy minute. The pressure team may swap one rival.",
+-  "Twist: Fast hands. Bonus points if answered in 10 seconds.",
+-  "Twist: Steady nerves. Any hesitation costs 1 point.",
+-  "Twist: Double or nothing. The pressure team can wager 5 of their points.",
+   "Twist: Tag in. Mid-round, the leader can swap themselves for any teammate.",
+-  "Twist: Steal window. If the losing team answers after the winner, they snatch 3 points.",
+-  "Twist: Crowd vote. The audience votes thumbs up/down after the performance — host adds up to +3.",
+   "Twist: Silent start. First 5 seconds must be performed in complete silence.",
+-  "Twist: Rematch clause. Losing team can immediately call a rematch — one time only.",
+-  "Twist: Mystery judge. Host picks one random person from the room to be the deciding judge.",
+-  "Twist: Momentum swing. If the trailing team wins, they earn double the normal points.",
+-  "Twist: Confidence tax. Before the round, each team secretly bids 1–5 points. Loser pays it out.",
+-  "Twist: Captain only. Only the team leader may perform or answer for this round.",
+-  "Twist: Lightning finish. Last 10 seconds only — whoever scores in that window gets +3.",
++  "Twist: Mystery judge. Host picks one random person from the room to judge the winner.",
++  "Twist: Captain only. Only the team leader may perform for this round.",
+ ];
+@@ -510,18 +510,7 @@
+ const stealChallenges = [
+-  "The pressure team faces a rival in a 1v1 duel. If they win, they steal momentum and maybe extra points.",
+-  "Pressure team picks their rival. Win the duel and steal 5 points directly off the rival's score.",
+-  "The team with the most votes faces the current leaderboard leader in a steal attempt.",
+-  "If the pressure team wins, they steal 3 points from every other team simultaneously.",
+-  "Pressure team vs. host's pick. Winner takes 7 points. Loser gives up 3.",
+-  "Last-place team is the pressure team — this is their comeback duel. Steal window is wide open.",
+-  "Steal Sprint: trailing team calls out any team above them. One Bible speed question decides a 6-point steal.",
+-  "Receipt Check: the pressure team gets 20 seconds to explain why they deserve another team's points, then must win a quick challenge to take them.",
+-  "Double Dare Steal: pressure team can attempt an easy task for +3 or a harder task for +8 from one rival.",
+-  "Captain Snatch: leaders face a sudden-death quiz. Winner steals 5 from the loser.",
+-  "Crowd Noise Steal: teams perform a 10-second hype chant. Host picks winner; winner steals 4 from any team.",
+-  "Reverse Steal: the targeted rival can block the steal by answering first. If they miss, the pressure team takes 7.",
+-  "Mercy Steal: last-place team gets one clean shot to steal 5 from first place. No penalty if they lose.",
+-  "Risky Receipt: team may steal 10, but if they fail the challenge they give 5 to the target.",
+-  "Tag-Team Theft: pressure team chooses one teammate and one rival teammate for a 2v2 mini challenge. Winner steals 6.",
+-  "Bible Backup Steal: answer the first question for +3, then choose to stop or risk it for a 7-point steal.",
++  "Steal Sprint: pressure team and assigned rival face one sudden-death speed challenge.",
++  "Captain Snatch: the two captains face one clean pressure duel.",
++  "Receipt Check: pressure team gets 20 seconds to make their case, then both teams face a quick challenge.",
++  "Bible Steal: one Bible speed question decides whether the five-point steal succeeds.",
++  "Crowd Noise Steal: both teams get 10 seconds to perform; host records the winner.",
+ ];
+@@ -619,3 +619,3 @@
+         scoringGuide:
+-          "Use winner and runner-up scoring for the duel, then give participation or bonus points to the rest.",
++          "Engine awards +10 to the showdown winner and +5 to the other matchup team, exactly once.",
+         twist: pickRandom(twists),
+@@ -681,3 +681,3 @@
+         scoringGuide:
+-          "Award normal winner and runner-up points, then use a custom score if you want to add the steal bonus.",
++          "If the pressure team wins, they steal up to 5 points from the assigned rival. If the rival wins, the steal is blocked.",
+         twist: pickRandom(twists),
+diff --git a/src/hooks/useGameActions.ts b/src/hooks/useGameActions.ts
+--- a/src/hooks/useGameActions.ts
++++ b/src/hooks/useGameActions.ts
+@@ -16,2 +16,9 @@
+ import { roundRequiresVoting } from "../features/gameflow/gamePhases";
++import {
++  challengeConfigForRoundType,
++  chooseAutomaticRival,
++  getChallengeConfig,
++  requiresChallengeResolution,
++  requiresRival,
++} from "../features/challenge/challengeEngine";
+ import { createHostSupabase, getHostSupabase, supabase } from "../lib/supabase";
+@@ -130,4 +130,5 @@
+   const [scoringTeamIds, setScoringTeamIds] = useState<Record<string, boolean>>({});
+   const [pendingVoteTargetId, setPendingVoteTargetId] = useState<string | null>(null);
+   const [pendingAnswerKey, setPendingAnswerKey] = useState<string | null>(null);
++  const [pendingChallengeAction, setPendingChallengeAction] = useState<string | null>(null);
+   const scoringLocksRef = useRef<Record<string, boolean>>({});
+@@ -252,4 +252,6 @@
+       const publicQuestionSet = quizQuestionSet?.map(toPublicQuizQuestion) ?? null;
++      const challengeConfig =
++        definition.challengeConfig ?? challengeConfigForRoundType(definition.type);
+       const selectedTimer =
+         Number(customTimerInput) > 0 ? Number(customTimerInput) : timerDuration;
+ 
+@@ -266,4 +266,8 @@
+         twist: definition.twist ?? null,
+         status,
++        rival_team_id: null,
++        challenge_config: challengeConfig,
++        challenge_winner_team_id: null,
++        challenge_resolved_at: null,
+         is_final: definition.isFinal ?? false,
+         timer_seconds: definition.requiresVoting ? selectedTimer : null,
+@@ -298,4 +298,8 @@
+         delete legacyPayload.question_status;
+         delete legacyPayload.question_started_at;
+         delete legacyPayload.started_at;
++        delete legacyPayload.rival_team_id;
++        delete legacyPayload.challenge_config;
++        delete legacyPayload.challenge_winner_team_id;
++        delete legacyPayload.challenge_resolved_at;
+         const { error: retryError } = await hostSupabase
+@@ -495,6 +495,7 @@
+     if (activeRound.status !== "voting" && activeRound.status !== "live") return;
+ 
+     let targetTeamId = activeRound.target_team_id;
++    let rivalTeamId = activeRound.rival_team_id ?? null;
+ 
+     if (activeRound.status === "voting") {
+       const highestCount = Math.max(0, ...sortedVoteCounts.map((entry) => entry.count));
+@@ -521,12 +522,24 @@
+       }
+     }
+ 
++    const config = getChallengeConfig(activeRound);
++    if (targetTeamId && requiresRival(config)) {
++      rivalTeamId =
++        chooseAutomaticRival({
++          config,
++          targetTeamId,
++          teams,
++          voteCounts: sortedVoteCounts,
++        })?.id ?? null;
++    }
++
+     const hostSupabase = getHostSupabase();
+     const { error } = await hostSupabase
+       .from("rounds")
+       .update({
+         status: "locked",
+         target_team_id: targetTeamId,
++        rival_team_id: rivalTeamId,
+       })
+       .eq("id", activeRound.id);
+ 
+@@ -535,16 +548,17 @@
+       return;
+     }
+ 
++    const patch = {
++      status: "locked" as const,
++      target_team_id: targetTeamId,
++      rival_team_id: rivalTeamId,
++    };
+     setActiveRound((current) =>
+-      current?.id === activeRound.id
+-        ? { ...current, status: "locked", target_team_id: targetTeamId }
+-        : current
++      current?.id === activeRound.id ? { ...current, ...patch } : current
+     );
+     setRounds((current) =>
+       current.map((round) =>
+-        round.id === activeRound.id
+-          ? { ...round, status: "locked", target_team_id: targetTeamId }
+-          : round
++        round.id === activeRound.id ? { ...round, ...patch } : round
+       )
+     );
+     sound.play("reveal");
+@@ -571,4 +571,10 @@
+       return;
+     }
+ 
++    const config = getChallengeConfig(activeRound);
++    if (requiresRival(config) && !activeRound.rival_team_id) {
++      setLoadError("Choose a rival before opening scoring.");
++      return;
++    }
++
+     const hostSupabase = getHostSupabase();
+@@ -636,3 +636,78 @@
++  async function setRivalTeam(rivalTeamId: string) {
++    if (
++      !activeRound ||
++      !activeRound.target_team_id ||
++      activeRound.challenge_resolved_at ||
++      pendingChallengeAction
++    ) {
++      return;
++    }
++
++    setPendingChallengeAction("set-rival");
++    setLoadError(null);
++
++    try {
++      const hostSupabase = getHostSupabase();
++      const { error } = await hostSupabase.rpc("host_set_round_rival", {
++        p_round_id: activeRound.id,
++        p_rival_team_id: rivalTeamId,
++      });
++
++      if (error) throw error;
++
++      setActiveRound((current) =>
++        current?.id === activeRound.id
++          ? { ...current, rival_team_id: rivalTeamId }
++          : current
++      );
++      setRounds((current) =>
++        current.map((round) =>
++          round.id === activeRound.id
++            ? { ...round, rival_team_id: rivalTeamId }
++            : round
++        )
++      );
++    } catch (error) {
++      setLoadError(error instanceof Error ? error.message : "Unable to set rival.");
++    } finally {
++      setPendingChallengeAction(null);
++    }
++  }
++
++  async function resolveChallenge(winnerTeamId: string) {
++    if (
++      !room ||
++      !activeRound ||
++      activeRound.status !== "scoring" ||
++      activeRound.challenge_resolved_at ||
++      pendingChallengeAction
++    ) {
++      return;
++    }
++
++    setPendingChallengeAction(`resolve:${winnerTeamId}`);
++    setLoadError(null);
++
++    try {
++      const hostSupabase = getHostSupabase();
++      const { error } = await hostSupabase.rpc("host_resolve_challenge", {
++        p_round_id: activeRound.id,
++        p_winner_team_id: winnerTeamId,
++      });
++
++      if (error) throw error;
++
++      await refreshRoomData(room.id);
++      sound.play("score");
++    } catch (error) {
++      setLoadError(
++        error instanceof Error ? error.message : "Unable to resolve challenge."
++      );
++    } finally {
++      setPendingChallengeAction(null);
++    }
++  }
++
+   async function applyScore(
+     teamId: string,
+     delta: number,
+@@ -771,4 +771,13 @@
+       if (!activeRound) return;
+       if (activeRound.status !== "scoring") return;
+ 
++      const config = getChallengeConfig(activeRound);
++      if (
++        requiresChallengeResolution(config) &&
++        !activeRound.challenge_resolved_at
++      ) {
++        setLoadError("Record the challenge winner before completing this round.");
++        return;
++      }
++
+       const hostSupabase = getHostSupabase();
+@@ -919,4 +919,5 @@
+   scoringTeamIds,
+   pendingVoteTargetId,
+   pendingAnswerKey,
++  pendingChallengeAction,
+   createRoom,
+@@ -928,4 +928,6 @@
+ lockVotes,
+ openScoring,
++setRivalTeam,
++resolveChallenge,
+ applyScore,
+ transferScore,
+diff --git a/src/app/App.tsx b/src/app/App.tsx
+--- a/src/app/App.tsx
++++ b/src/app/App.tsx
+@@ -114,14 +114,13 @@
+   }, [session.activeRound?.target_team_id, session.teams]);
+ 
+   const rivalTeam = useMemo(() => {
+-    if (!targetTeam) return null;
+-
++    if (!session.activeRound?.rival_team_id) return null;
+     return (
+-      sortedVoteCounts.find((entry) => entry.team.id !== targetTeam.id)?.team ??
+-      sortedTeams.find((team) => team.id !== targetTeam.id) ??
+-      null
++      session.teams.find(
++        (team) => team.id === session.activeRound?.rival_team_id
++      ) ?? null
+     );
+-  }, [sortedTeams, sortedVoteCounts, targetTeam]);
++  }, [session.activeRound?.rival_team_id, session.teams]);
+ 
+   const leaderAnswer = useMemo(() => {
+     if (!session.leaderTeam || !session.activeRound) return null;
+@@ -305,3 +305,6 @@
+           openScoring={actions.openScoring}
++          setRivalTeam={actions.setRivalTeam}
++          resolveChallenge={actions.resolveChallenge}
++          pendingChallengeAction={actions.pendingChallengeAction}
+           applyScore={actions.applyScore}
+           completeRound={actions.completeRound}
+diff --git a/src/features/host/HostScreen.tsx b/src/features/host/HostScreen.tsx
+--- a/src/features/host/HostScreen.tsx
++++ b/src/features/host/HostScreen.tsx
+@@ -44,3 +44,6 @@
+   lockVotes: () => void;
+   openScoring: () => void;
++  setRivalTeam: (teamId: string) => void;
++  resolveChallenge: (winnerTeamId: string) => void;
++  pendingChallengeAction: string | null;
+   applyScore: (teamId: string, delta: number, reason: string) => void;
+@@ -174,4 +174,7 @@
+             startRound={props.startRound}
+             lockVotes={props.lockVotes}
++            setRivalTeam={props.setRivalTeam}
++            resolveChallenge={props.resolveChallenge}
++            pendingChallengeAction={props.pendingChallengeAction}
+             completeRound={props.completeRound}
+             applyScore={props.applyScore}
+diff --git a/src/features/challenge/ChallengeControlPanel.tsx b/src/features/challenge/ChallengeControlPanel.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/challenge/ChallengeControlPanel.tsx
+@@ -0,0 +1,106 @@
++import { ShieldCheck, Swords } from "lucide-react";
++import type { RoundRecord, Team } from "../../lib/types";
++import {
++  describeChallengeScoring,
++  getChallengeConfig,
++  getEligibleRivals,
++  requiresRival,
++} from "./challengeEngine";
++
++type ChallengeControlPanelProps = {
++  round: RoundRecord;
++  teams: Team[];
++  targetTeam: Team | null;
++  rivalTeam: Team | null;
++  pendingAction: string | null;
++  setRivalTeam: (teamId: string) => void;
++  resolveChallenge: (winnerTeamId: string) => void;
++};
++
++export function ChallengeControlPanel(props: ChallengeControlPanelProps) {
++  const config = getChallengeConfig(props.round);
++  if (!requiresRival(config) || !props.targetTeam) return null;
++
++  const eligibleRivals = getEligibleRivals(props.teams, props.targetTeam.id);
++  const resolvedWinner = props.round.challenge_winner_team_id
++    ? props.teams.find((team) => team.id === props.round.challenge_winner_team_id) ?? null
++    : null;
++  const resolved = Boolean(props.round.challenge_resolved_at);
++  const canEditRival =
++    !resolved &&
++    (props.round.status === "locked" || props.round.status === "scoring");
++  const canResolve =
++    props.round.status === "scoring" &&
++    !resolved &&
++    Boolean(props.rivalTeam) &&
++    !props.pendingAction;
++
++  return (
++    <div className="stage-block">
++      <div className="score-panel-top">
++        <div>
++          <p className="section-kicker">Structured matchup</p>
++          <h3>
++            {props.targetTeam.name}
++            {props.rivalTeam ? ` vs ${props.rivalTeam.name}` : " needs a rival"}
++          </h3>
++          <p className="muted-text">{config.winCondition}</p>
++          <p className="muted-text">
++            {config.durationSeconds ? `${config.durationSeconds}s · ` : ""}
++            {describeChallengeScoring(config)}
++          </p>
++        </div>
++      </div>
++
++      <label className="admin-editor-row">
++        <span>Assigned rival</span>
++        <select
++          value={props.rivalTeam?.id ?? ""}
++          onChange={(event) => props.setRivalTeam(event.target.value)}
++          disabled={!canEditRival || Boolean(props.pendingAction)}
++        >
++          <option value="" disabled>
++            Choose rival
++          </option>
++          {eligibleRivals.map((team) => (
++            <option key={team.id} value={team.id}>
++              {team.name} ({team.score} pts)
++            </option>
++          ))}
++        </select>
++      </label>
++
++      {resolved ? (
++        <div className="latest-score-strip">
++          <strong>
++            <ShieldCheck size={16} /> Resolved
++          </strong>
++          <span>{resolvedWinner?.name ?? "Winner"} recorded as the challenge winner.</span>
++        </div>
++      ) : props.round.status === "scoring" && props.rivalTeam ? (
++        <div className="quiz-command-row">
++          <button
++            className="primary-btn"
++            onClick={() => props.resolveChallenge(props.targetTeam!.id)}
++            disabled={!canResolve}
++          >
++            <Swords size={18} />
++            {config.scoringMode === "steal"
++              ? `${props.targetTeam.name} wins — execute steal`
++              : `${props.targetTeam.name} wins`}
++          </button>
++          <button
++            className="ghost-btn"
++            onClick={() => props.resolveChallenge(props.rivalTeam!.id)}
++            disabled={!canResolve}
++          >
++            <ShieldCheck size={18} />
++            {config.scoringMode === "steal"
++              ? `${props.rivalTeam.name} defends`
++              : `${props.rivalTeam.name} wins`}
++          </button>
++        </div>
++      ) : null}
++    </div>
++  );
++}
+diff --git a/src/features/host/HostCommandPanel.tsx b/src/features/host/HostCommandPanel.tsx
+--- a/src/features/host/HostCommandPanel.tsx
++++ b/src/features/host/HostCommandPanel.tsx
+@@ -11,3 +11,4 @@
+ import { QuizHostPanel } from "../quiz/QuizHostPanel";
+ import { isRapidQuizRound } from "../quiz/quizEngine";
++import { ChallengeControlPanel } from "../challenge/ChallengeControlPanel";
+ import { HostShowModePanel } from "./HostShowModePanel";
+@@ -39,4 +39,7 @@
+   startRound: (type?: RoundType, definition?: RoundDefinition) => Promise<boolean>;
+   lockVotes: () => void;
++  setRivalTeam: (teamId: string) => void;
++  resolveChallenge: (winnerTeamId: string) => void;
++  pendingChallengeAction: string | null;
+   completeRound: () => void;
+   applyScore: (teamId: string, delta: number, reason: string) => void;
+@@ -250,6 +250,20 @@
+               rivalTeam={props.rivalTeam}
+             />
+           )}
++
++          {props.activeRound &&
++            ["locked", "scoring"].includes(props.activeRound.status) &&
++            !isQuizRound && (
++              <ChallengeControlPanel
++                round={props.activeRound}
++                teams={props.teams}
++                targetTeam={props.targetTeam}
++                rivalTeam={props.rivalTeam}
++                pendingAction={props.pendingChallengeAction}
++                setRivalTeam={props.setRivalTeam}
++                resolveChallenge={props.resolveChallenge}
++              />
++            )}
+         </div>
+ 
+         {props.activeRound &&
+diff --git a/supabase/migrations/202609010003_challenge_engine.sql b/supabase/migrations/202609010003_challenge_engine.sql
+new file mode 100644
+--- /dev/null
++++ b/supabase/migrations/202609010003_challenge_engine.sql
+@@ -0,0 +1,350 @@
++alter table public.rounds
++  add column if not exists rival_team_id uuid references public.teams(id) on delete set null,
++  add column if not exists challenge_config jsonb,
++  add column if not exists challenge_winner_team_id uuid references public.teams(id) on delete set null,
++  add column if not exists challenge_resolved_at timestamptz;
++
++alter table public.rounds
++  drop constraint if exists rounds_distinct_matchup_teams_check;
++
++alter table public.rounds
++  add constraint rounds_distinct_matchup_teams_check
++  check (rival_team_id is null or target_team_id is null or rival_team_id <> target_team_id)
++  not valid;
++
++alter table public.rounds
++  validate constraint rounds_distinct_matchup_teams_check;
++
++alter table public.rounds
++  drop constraint if exists rounds_challenge_config_object_check;
++
++alter table public.rounds
++  add constraint rounds_challenge_config_object_check
++  check (challenge_config is null or jsonb_typeof(challenge_config) = 'object')
++  not valid;
++
++alter table public.rounds
++  validate constraint rounds_challenge_config_object_check;
++
++create index if not exists rounds_rival_team_id_idx
++  on public.rounds(rival_team_id);
++
++create or replace function public.default_challenge_config(p_round_type text)
++returns jsonb
++language sql
++immutable
++set search_path = public
++as $$
++  select case p_round_type
++    when 'voting' then jsonb_build_object(
++      'participantMode', 'head_to_head',
++      'participantCount', 2,
++      'durationSeconds', 30,
++      'matchupRule', 'vote_runner_up',
++      'winCondition', 'Host declares the winner of the pressure showdown.',
++      'scoringMode', 'winner_points',
++      'winnerPoints', 10,
++      'runnerUpPoints', 5
++    )
++    when 'steal' then jsonb_build_object(
++      'participantMode', 'head_to_head',
++      'participantCount', 2,
++      'durationSeconds', 30,
++      'matchupRule', 'vote_runner_up',
++      'winCondition', 'Pressure team wins to steal 5 points; rival wins to block the steal.',
++      'scoringMode', 'steal',
++      'stealAmount', 5
++    )
++    when 'quiz_burst' then jsonb_build_object(
++      'participantMode', 'all_teams',
++      'participantCount', null,
++      'durationSeconds', null,
++      'matchupRule', 'none',
++      'winCondition', 'Correct answers are ranked by submission time.',
++      'scoringMode', 'quiz'
++    )
++    when 'bible_speed' then jsonb_build_object(
++      'participantMode', 'all_teams',
++      'participantCount', null,
++      'durationSeconds', null,
++      'matchupRule', 'none',
++      'winCondition', 'Correct answers are ranked by submission time.',
++      'scoringMode', 'quiz'
++    )
++    else jsonb_build_object(
++      'participantMode', 'all_teams',
++      'participantCount', null,
++      'durationSeconds', null,
++      'matchupRule', 'none',
++      'winCondition', 'Host judges the challenge using the round instructions.',
++      'scoringMode', 'manual'
++    )
++  end;
++$$;
++
++update public.rounds
++set challenge_config = public.default_challenge_config(round_type)
++where challenge_config is null;
++
++create or replace function public.validate_round_challenge_team_links()
++returns trigger
++language plpgsql
++security definer
++set search_path = public
++as $$
++begin
++  if new.target_team_id is not null and not exists (
++    select 1 from public.teams
++    where teams.id = new.target_team_id
++      and teams.room_id = new.room_id
++  ) then
++    raise exception 'Pressure team must belong to the round room.';
++  end if;
++
++  if new.rival_team_id is not null and not exists (
++    select 1 from public.teams
++    where teams.id = new.rival_team_id
++      and teams.room_id = new.room_id
++  ) then
++    raise exception 'Rival team must belong to the round room.';
++  end if;
++
++  if new.challenge_winner_team_id is not null and not exists (
++    select 1 from public.teams
++    where teams.id = new.challenge_winner_team_id
++      and teams.room_id = new.room_id
++  ) then
++    raise exception 'Challenge winner must belong to the round room.';
++  end if;
++
++  return new;
++end;
++$$;
++
++drop trigger if exists validate_round_challenge_team_links_trigger
++  on public.rounds;
++
++create trigger validate_round_challenge_team_links_trigger
++  before insert or update of target_team_id, rival_team_id, challenge_winner_team_id
++  on public.rounds
++  for each row
++  execute function public.validate_round_challenge_team_links();
++
++create or replace function public.host_set_round_rival(
++  p_round_id uuid,
++  p_rival_team_id uuid
++)
++returns uuid
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_round_room_id uuid;
++  v_target_team_id uuid;
++  v_round_status text;
++  v_resolved_at timestamptz;
++begin
++  select room_id, target_team_id, status, challenge_resolved_at
++  into v_round_room_id, v_target_team_id, v_round_status, v_resolved_at
++  from public.rounds
++  where id = p_round_id
++  for update;
++
++  if v_round_room_id is null then
++    raise exception 'Round not found.';
++  end if;
++
++  if not public.is_room_host(v_round_room_id) then
++    raise exception 'Host authorization failed.';
++  end if;
++
++  if v_round_status not in ('locked', 'scoring') then
++    raise exception 'Rival can only be changed after the matchup is locked.';
++  end if;
++
++  if v_resolved_at is not null then
++    raise exception 'Resolved challenges cannot change rivals.';
++  end if;
++
++  if v_target_team_id is null then
++    raise exception 'Choose a pressure team before assigning a rival.';
++  end if;
++
++  if p_rival_team_id = v_target_team_id then
++    raise exception 'Pressure team cannot be its own rival.';
++  end if;
++
++  if not exists (
++    select 1 from public.teams
++    where teams.id = p_rival_team_id
++      and teams.room_id = v_round_room_id
++  ) then
++    raise exception 'Rival team must belong to this room.';
++  end if;
++
++  update public.rounds
++  set rival_team_id = p_rival_team_id
++  where id = p_round_id;
++
++  return p_rival_team_id;
++end;
++$$;
++
++create or replace function public.host_resolve_challenge(
++  p_round_id uuid,
++  p_winner_team_id uuid
++)
++returns table (
++  resolved_round_id uuid,
++  winner_team_id uuid,
++  loser_team_id uuid,
++  scoring_mode text,
++  transferred_amount integer,
++  resolved_at timestamptz
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_round public.rounds%rowtype;
++  v_config jsonb;
++  v_loser_team_id uuid;
++  v_scoring_mode text;
++  v_winner_points integer;
++  v_runner_up_points integer;
++  v_steal_amount integer;
++  v_loser_score integer;
++  v_transfer_amount integer := 0;
++  v_resolved_at timestamptz := now();
++  v_dedupe_base text;
++begin
++  select *
++  into v_round
++  from public.rounds
++  where id = p_round_id
++  for update;
++
++  if not found then
++    raise exception 'Round not found.';
++  end if;
++
++  if not public.is_room_host(v_round.room_id) then
++    raise exception 'Host authorization failed.';
++  end if;
++
++  if v_round.status <> 'scoring' then
++    raise exception 'Challenge can only be resolved during scoring.';
++  end if;
++
++  if v_round.challenge_resolved_at is not null then
++    raise exception 'Challenge has already been resolved.';
++  end if;
++
++  if v_round.target_team_id is null or v_round.rival_team_id is null then
++    raise exception 'Challenge requires both a pressure team and a rival.';
++  end if;
++
++  if p_winner_team_id not in (v_round.target_team_id, v_round.rival_team_id) then
++    raise exception 'Winner must be one of the assigned matchup teams.';
++  end if;
++
++  v_loser_team_id := case
++    when p_winner_team_id = v_round.target_team_id then v_round.rival_team_id
++    else v_round.target_team_id
++  end;
++
++  v_config := coalesce(
++    v_round.challenge_config,
++    public.default_challenge_config(v_round.round_type)
++  );
++  v_scoring_mode := coalesce(v_config ->> 'scoringMode', 'manual');
++  v_dedupe_base := 'challenge:' || p_round_id::text;
++
++  if v_scoring_mode = 'winner_points' then
++    v_winner_points := greatest(coalesce((v_config ->> 'winnerPoints')::integer, 10), 0);
++    v_runner_up_points := greatest(coalesce((v_config ->> 'runnerUpPoints')::integer, 5), 0);
++
++    if v_winner_points > 0 then
++      perform public.apply_score_event(
++        v_round.room_id,
++        p_winner_team_id,
++        v_winner_points,
++        'Challenge winner',
++        p_round_id,
++        v_dedupe_base || ':winner'
++      );
++    end if;
++
++    if v_runner_up_points > 0 then
++      perform public.apply_score_event(
++        v_round.room_id,
++        v_loser_team_id,
++        v_runner_up_points,
++        'Challenge runner-up',
++        p_round_id,
++        v_dedupe_base || ':runner-up'
++      );
++    end if;
++  elsif v_scoring_mode = 'steal' then
++    if p_winner_team_id = v_round.target_team_id then
++      v_steal_amount := greatest(coalesce((v_config ->> 'stealAmount')::integer, 5), 0);
++
++      select score
++      into v_loser_score
++      from public.teams
++      where id = v_loser_team_id
++      for update;
++
++      v_transfer_amount := least(v_steal_amount, greatest(coalesce(v_loser_score, 0), 0));
++
++      if v_transfer_amount > 0 then
++        perform public.apply_score_event(
++          v_round.room_id,
++          v_loser_team_id,
++          -v_transfer_amount,
++          'Challenge steal debit',
++          p_round_id,
++          v_dedupe_base || ':steal:debit'
++        );
++
++        perform public.apply_score_event(
++          v_round.room_id,
++          p_winner_team_id,
++          v_transfer_amount,
++          'Challenge steal credit',
++          p_round_id,
++          v_dedupe_base || ':steal:credit'
++        );
++      end if;
++    end if;
++  elsif v_scoring_mode <> 'manual' then
++    raise exception 'Unsupported challenge scoring mode: %', v_scoring_mode;
++  end if;
++
++  update public.rounds
++  set
++    challenge_winner_team_id = p_winner_team_id,
++    challenge_resolved_at = v_resolved_at
++  where id = p_round_id;
++
++  return query
++  select
++    p_round_id,
++    p_winner_team_id,
++    v_loser_team_id,
++    v_scoring_mode,
++    v_transfer_amount,
++    v_resolved_at;
++end;
++$$;
++
++revoke execute on function public.host_set_round_rival(uuid, uuid)
++  from public;
++revoke execute on function public.host_resolve_challenge(uuid, uuid)
++  from public;
++
++grant execute on function public.host_set_round_rival(uuid, uuid)
++  to anon, authenticated;
++grant execute on function public.host_resolve_challenge(uuid, uuid)
++  to anon, authenticated;
