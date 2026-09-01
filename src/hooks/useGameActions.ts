@@ -2,6 +2,7 @@ import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { buildRoundDefinition } from "../data/gameContent";
 import {
   HOST_SESSION_KEY,
+  LEADER_SESSION_KEY,
   createDefaultDrafts,
   generateCode,
   normalizeTeam,
@@ -13,7 +14,8 @@ import {
   getCurrentQuestionIndex,
   isRapidQuizRound,
 } from "../features/quiz/quizEngine";
-import { supabase } from "../lib/supabase";
+import { roundRequiresVoting } from "../features/gameflow/gamePhases";
+import { createHostSupabase, getHostSupabase, supabase } from "../lib/supabase";
 import {
   fetchRoomByCode,
   fetchTeamByLeaderCode,
@@ -136,8 +138,9 @@ export function useGameActions({
     try {
       const code = generateCode();
       const hostPin = generateCode(6);
+      const hostSupabase = createHostSupabase(hostPin);
 
-      const { data: createdRoom, error: roomError } = await supabase
+      const { data: createdRoom, error: roomError } = await hostSupabase
         .from("rooms")
         .insert({ code, host_pin: hostPin, status: "active" })
         .select(roomColumns)
@@ -145,7 +148,7 @@ export function useGameActions({
 
       if (roomError || !createdRoom) throw roomError ?? new Error("Room creation failed.");
 
-      const { data: createdTeams, error: teamsError } = await supabase
+      const { data: createdTeams, error: teamsError } = await hostSupabase
         .from("teams")
         .insert(
           createDefaultDrafts().map((team) => ({
@@ -193,25 +196,34 @@ export function useGameActions({
         teamCodeInput.trim().toUpperCase()
       );
 
-      const { error: joinedError } = await supabase
-        .from("teams")
-        .update({ joined_at: new Date().toISOString() })
-        .eq("id", foundTeam.id);
+      const joinedAt = new Date().toISOString();
+      const { error: joinedError } = await supabase.rpc("join_team_session", {
+        p_room_id: foundRoom.id,
+        p_team_id: foundTeam.id,
+        p_leader_code: teamCodeInput.trim().toUpperCase(),
+      });
 
-      if (joinedError && !joinedError.message.toLowerCase().includes("joined_at")) {
+      if (joinedError) {
         throw joinedError;
       }
 
       setRoom(foundRoom as Room);
       setLeaderTeam(
         normalizeTeam(
-          { ...(foundTeam as Team), joined_at: new Date().toISOString() },
+          { ...(foundTeam as Team), joined_at: joinedAt },
           0
         )
       );
       setMode("leader");
       queueRoomRefresh(foundRoom.id, 0);
       if (typeof window !== "undefined") {
+        window.localStorage.setItem(
+          LEADER_SESSION_KEY,
+          JSON.stringify({
+            roomCode: foundRoom.code,
+            teamCode: teamCodeInput.trim().toUpperCase(),
+          })
+        );
         const url = new URL(window.location.href);
         url.pathname = "/join";
         url.searchParams.set("room", foundRoom.code);
@@ -232,7 +244,8 @@ export function useGameActions({
     try {
       const definition = plannedDefinition ?? buildRoundDefinition(roundType);
       const nextRoundNumber = (rounds[0]?.round_number ?? 0) + 1;
-      const status: RoundStatus = definition.requiresVoting ? "voting" : "scoring";
+      const status: RoundStatus = "reveal";
+      const hostSupabase = getHostSupabase();
       const selectedTimer =
         Number(customTimerInput) > 0 ? Number(customTimerInput) : timerDuration;
 
@@ -256,9 +269,10 @@ export function useGameActions({
         current_question_index: definition.currentQuestionIndex ?? 0,
         question_status: definition.questionStatus ?? "waiting",
         question_started_at: null,
+        started_at: null,
       };
 
-      const { data: insertedRound, error } = await supabase
+      const { data: insertedRound, error } = await hostSupabase
         .from("rounds")
         .insert(roundPayload)
         .select(roundColumns)
@@ -273,12 +287,13 @@ export function useGameActions({
         delete legacyPayload.current_question_index;
         delete legacyPayload.question_status;
         delete legacyPayload.question_started_at;
-        const { error: retryError } = await supabase
+        delete legacyPayload.started_at;
+        const { error: retryError } = await hostSupabase
           .from("rounds")
           .insert(legacyPayload);
 
         if (retryError) {
-          const { error: minimalRetryError } = await supabase
+          const { error: minimalRetryError } = await hostSupabase
             .from("rounds")
             .insert(toLegacyRoundPayload(roundPayload));
 
@@ -291,7 +306,7 @@ export function useGameActions({
         setActiveRound(mappedRound);
       }
 
-      await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
+      await hostSupabase.from("rooms").update({ status: "active" }).eq("id", room.id);
       setRoom((current) => (current ? { ...current, status: "active" } : current));
 
       setSelectedRoundType(definition.type);
@@ -304,6 +319,38 @@ export function useGameActions({
       );
       return false;
     }
+  }
+
+  async function beginRound() {
+    if (!activeRound) return;
+    if (activeRound.status !== "reveal" && activeRound.status !== "lobby") return;
+
+    const nextStatus: RoundStatus = roundRequiresVoting(activeRound.round_type)
+      ? "voting"
+      : "live";
+    const startedAt = new Date().toISOString();
+    const hostSupabase = getHostSupabase();
+
+    const { error } = await hostSupabase
+      .from("rounds")
+      .update({ status: nextStatus, started_at: startedAt })
+      .eq("id", activeRound.id);
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    const patch = { status: nextStatus, started_at: startedAt };
+    setActiveRound((current) =>
+      current?.id === activeRound.id ? { ...current, ...patch } : current
+    );
+    setRounds((current) =>
+      current.map((round) =>
+        round.id === activeRound.id ? { ...round, ...patch } : round
+      )
+    );
+    sound.play("roundStart");
   }
 
   async function submitVote(targetTeamId: string) {
@@ -464,14 +511,41 @@ export function useGameActions({
 
   async function lockVotes() {
     if (!activeRound) return;
+    if (activeRound.status !== "voting" && activeRound.status !== "live") return;
 
-    const winner = sortedVoteCounts[0];
+    let targetTeamId = activeRound.target_team_id;
 
-    const { error } = await supabase
+    if (activeRound.status === "voting") {
+      const highestCount = Math.max(0, ...sortedVoteCounts.map((entry) => entry.count));
+
+      if (highestCount === 0) {
+        setLoadError("No votes were submitted. Keep voting open or choose another round.");
+        return;
+      }
+
+      const tiedLeaders = sortedVoteCounts.filter((entry) => entry.count === highestCount);
+      const randomIndex =
+        tiedLeaders.length > 1
+          ? crypto.getRandomValues(new Uint32Array(1))[0] % tiedLeaders.length
+          : 0;
+      const winner = tiedLeaders[randomIndex];
+      targetTeamId = winner?.team.id ?? null;
+
+      if (tiedLeaders.length > 1 && winner) {
+        setLoadError(
+          `Vote tied at ${highestCount}. Random tiebreak selected ${winner.team.name}.`
+        );
+      } else {
+        setLoadError(null);
+      }
+    }
+
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase
       .from("rounds")
       .update({
-        status: "scoring",
-        target_team_id: winner?.team.id ?? null,
+        status: "locked",
+        target_team_id: targetTeamId,
       })
       .eq("id", activeRound.id);
 
@@ -480,19 +554,48 @@ export function useGameActions({
       return;
     }
 
-      setActiveRound((current) =>
-        current?.id === activeRound.id
-          ? { ...current, status: "scoring", target_team_id: winner?.team.id ?? null }
-          : current
-      );
+    setActiveRound((current) =>
+      current?.id === activeRound.id
+        ? { ...current, status: "locked", target_team_id: targetTeamId }
+        : current
+    );
     setRounds((current) =>
       current.map((round) =>
         round.id === activeRound.id
-          ? { ...round, status: "scoring", target_team_id: winner?.team.id ?? null }
+          ? { ...round, status: "locked", target_team_id: targetTeamId }
           : round
       )
     );
     sound.play("reveal");
+  }
+
+  async function openScoring() {
+    if (!activeRound || activeRound.status !== "locked") return;
+
+    if (roundRequiresVoting(activeRound.round_type) && !activeRound.target_team_id) {
+      setLoadError("Choose a pressure team before opening scoring.");
+      return;
+    }
+
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase
+      .from("rounds")
+      .update({ status: "scoring" })
+      .eq("id", activeRound.id);
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    setActiveRound((current) =>
+      current?.id === activeRound.id ? { ...current, status: "scoring" } : current
+    );
+    setRounds((current) =>
+      current.map((round) =>
+        round.id === activeRound.id ? { ...round, status: "scoring" } : round
+      )
+    );
   }
 
   async function applyScore(
@@ -526,8 +629,9 @@ export function useGameActions({
           crypto.randomUUID(),
         ].join(":");
 
-      const { data, error } = await supabase
-        .rpc("apply_score_event", {
+      const hostSupabase = getHostSupabase();
+      const { data, error } = await hostSupabase
+        .rpc("host_apply_score_event", {
           p_room_id: room.id,
           p_team_id: teamId,
           p_delta: finalDelta,
@@ -567,8 +671,9 @@ export function useGameActions({
     const team = teams.find((entry) => entry.id === latestScoreEvent.team_id);
     if (!team) return;
 
-    const { data, error } = await supabase
-      .rpc("undo_score_event", {
+    const hostSupabase = getHostSupabase();
+    const { data, error } = await hostSupabase
+      .rpc("host_undo_score_event", {
         p_score_event_id: latestScoreEvent.id,
       })
       .single();
@@ -591,15 +696,50 @@ export function useGameActions({
     );
   }
 
+  async function transferScore(
+    fromTeamId: string,
+    toTeamId: string,
+    amount: number,
+    reason: string
+  ) {
+    if (!room || amount <= 0 || fromTeamId === toTeamId) return;
+
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase.rpc("host_transfer_score", {
+      p_room_id: room.id,
+      p_from_team_id: fromTeamId,
+      p_to_team_id: toTeamId,
+      p_amount: amount,
+      p_reason: reason,
+      p_round_id: activeRound?.id ?? null,
+      p_dedupe_key: [
+        "transfer",
+        room.id,
+        activeRound?.id ?? "room",
+        fromTeamId,
+        toTeamId,
+        amount,
+        crypto.randomUUID(),
+      ].join(":"),
+    });
+
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
+    await refreshRoomData(room.id);
+    sound.play("score");
+  }
+
   async function completeRound() {
     if (!activeRound) return;
+    if (activeRound.status !== "scoring") return;
 
-    const nextStatus: RoundStatus =
-      activeRound.round_type === "final_double" ? "winner" : "complete";
-
-    const { error } = await supabase
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase
       .from("rounds")
-      .update({ status: nextStatus })
+      .update({ status: "complete" })
       .eq("id", activeRound.id);
 
     if (error) {
@@ -607,22 +747,13 @@ export function useGameActions({
       return;
     }
 
-    if (activeRound.round_type === "final_double") {
-      setShowWinner(true);
-      setActiveRound((current) =>
-        current?.id === activeRound.id ? { ...current, status: "winner" } : current
-      );
-      setRounds((current) =>
-        current.map((round) =>
-          round.id === activeRound.id ? { ...round, status: "winner" } : round
-        )
-      );
-      sound.play("winner");
-      return;
-    }
-
-    await supabase.from("rooms").update({ status: "active" }).eq("id", activeRound.room_id);
-    setActiveRound(null);
+    await hostSupabase
+      .from("rooms")
+      .update({ status: "active" })
+      .eq("id", activeRound.room_id);
+    setActiveRound((current) =>
+      current?.id === activeRound.id ? { ...current, status: "complete" } : current
+    );
     setRounds((current) =>
       current.map((round) =>
         round.id === activeRound.id ? { ...round, status: "complete" } : round
@@ -632,8 +763,34 @@ export function useGameActions({
 
   async function revealWinner() {
     if (!room) return;
+    if (teams.length === 0) {
+      setLoadError("Cannot reveal a winner without teams.");
+      return;
+    }
+
+
+    const topScore = Math.max(...teams.map((team) => team.score));
+    const tiedWinners = teams.filter((team) => team.score === topScore);
+
+    if (tiedWinners.length !== 1) {
+      const names = tiedWinners.map((team) => team.name).join(", ");
+      setLoadError(
+        `Final score is tied between ${names}. Run a tiebreak round before revealing the winner.`
+      );
+      return;
+    }
+
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase
+      .from("rooms")
+      .update({ status: "winner" })
+      .eq("id", room.id);
+    if (error) {
+      setLoadError(error.message);
+      return;
+    }
+
     setShowWinner(true);
-    await supabase.from("rooms").update({ status: "winner" }).eq("id", room.id);
     setRoom((current) => (current ? { ...current, status: "winner" } : current));
     sound.play("winner");
   }
@@ -644,19 +801,20 @@ export function useGameActions({
     setLoadError(null);
 
     try {
+      const hostSupabase = getHostSupabase();
       const roundIds = rounds.map((round) => round.id);
 
       if (roundIds.length > 0) {
-        await supabase.from("votes").delete().in("round_id", roundIds);
-        await supabase.from("answer_submissions").delete().in("round_id", roundIds);
+        await hostSupabase.from("votes").delete().in("round_id", roundIds);
+        await hostSupabase.from("answer_submissions").delete().in("round_id", roundIds);
       }
 
-      await supabase.from("score_events").delete().eq("room_id", room.id);
-      await supabase.from("rounds").delete().eq("room_id", room.id);
+      await hostSupabase.from("score_events").delete().eq("room_id", room.id);
+      await hostSupabase.from("rounds").delete().eq("room_id", room.id);
       await Promise.all(
-        teams.map((team) => supabase.from("teams").update({ score: 0 }).eq("id", team.id))
+        teams.map((team) => hostSupabase.from("teams").update({ score: 0 }).eq("id", team.id))
       );
-      await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
+      await hostSupabase.from("rooms").update({ status: "active" }).eq("id", room.id);
       setShowWinner(false);
       setVotes([]);
       setAnswerSubmissions([]);
@@ -675,7 +833,8 @@ export function useGameActions({
     teamId: string,
     patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>
   ) {
-    const { error } = await supabase.from("teams").update(patch).eq("id", teamId);
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase.from("teams").update(patch).eq("id", teamId);
 
     if (error) {
       setLoadError(error.message);
@@ -694,7 +853,8 @@ export function useGameActions({
       >
     >
   ) {
-    const { error } = await supabase.from("rounds").update(patch).eq("id", roundId);
+    const hostSupabase = getHostSupabase();
+    const { error } = await hostSupabase.from("rounds").update(patch).eq("id", roundId);
 
     if (error) {
       setLoadError(error.message);
@@ -711,10 +871,13 @@ export function useGameActions({
     createRoom,
     joinAsLeader,
     startRound,
+    beginRound,
     submitVote,
     submitAnswer,
     lockVotes,
+    openScoring,
     applyScore,
+    transferScore,
     undoLastScore,
     completeRound,
     revealWinner,

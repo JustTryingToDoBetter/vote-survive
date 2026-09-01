@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Check, Play, Settings, Sparkles, TimerReset, Trophy, Users, Vote } from "lucide-react";
+import { Play, Settings, Sparkles, TimerReset, Trophy, Users, Vote } from "lucide-react";
 import type React from "react";
 import { roundTypeLabels } from "../../data/gameContent";
 import {
@@ -159,12 +159,8 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
         {!canStartRound && (
           <div className="round-blocked-row">
             <p className="muted-text">
-              A round is still active. Close it to choose the next round.
+              A round is still active. Use the run-of-show control above to move it forward.
             </p>
-            <button className="ghost-btn" onClick={props.completeRound}>
-              <Check size={18} />
-              Close current round
-            </button>
           </div>
         )}
         <TimerControls
@@ -225,7 +221,9 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
           />
         )}
 
-        {props.activeRound && props.activeRound.status !== "voting" && !isQuizRound && (
+        {props.activeRound &&
+          ["live", "locked", "scoring"].includes(props.activeRound.status) &&
+          !isQuizRound && (
           <ChallengeRevealCard
             round={props.activeRound}
             targetTeam={props.targetTeam}
@@ -236,6 +234,8 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
 
       {props.activeRound &&
         isQuizRound &&
+        props.activeRound.status !== "reveal" &&
+        props.activeRound.status !== "lobby" &&
         props.activeRound.status !== "complete" &&
         props.activeRound.status !== "winner" && (
           <QuizHostPanel
@@ -254,6 +254,8 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
 
       {props.activeRound &&
         !isQuizRound &&
+        props.activeRound.status !== "reveal" &&
+        props.activeRound.status !== "lobby" &&
         props.activeRound.status !== "complete" &&
         props.activeRound.status !== "winner" && (
           <AnswerRacePanel

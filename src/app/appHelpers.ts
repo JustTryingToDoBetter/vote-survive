@@ -10,6 +10,7 @@ import type {
 } from "../lib/types";
 
 export const HOST_SESSION_KEY = "vote-survive-host-session";
+export const LEADER_SESSION_KEY = "vote-survive-leader-session";
 
 export function generateCode(length = 5) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -73,6 +74,7 @@ export function toRoundRecord(row: Record<string, unknown>): RoundRecord {
       (row.question_status as QuestionStatus | null | undefined) ?? null,
     question_started_at:
       (row.question_started_at as string | null | undefined) ?? null,
+    started_at: (row.started_at as string | null | undefined) ?? null,
     created_at: String(row.created_at),
   };
 }

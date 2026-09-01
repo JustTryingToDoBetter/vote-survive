@@ -50,9 +50,10 @@ export function ProjectorStage({
   }
 
   const voting = activeRound.status === "voting";
+  const revealing = activeRound.status === "reveal" || activeRound.status === "lobby";
   const teams = voteCounts.map((entry) => entry.team);
 
-  if (isRapidQuizRound(activeRound)) {
+  if (isRapidQuizRound(activeRound) && !revealing) {
     return (
       <QuizProjectorPanel
         round={activeRound}
@@ -79,7 +80,7 @@ export function ProjectorStage({
         >
           <p className="section-kicker">Round {activeRound.round_number ?? ""}</p>
           <h2>{activeRound.title}</h2>
-          <h3>{voting ? activeRound.prompt : activeRound.challenge}</h3>
+          <h3>{voting || revealing ? activeRound.prompt : activeRound.challenge}</h3>
           {activeRound.twist && <strong>{activeRound.twist}</strong>}
         </motion.div>
 
@@ -111,6 +112,16 @@ export function ProjectorStage({
               ))}
             </div>
           </div>
+        ) : revealing ? (
+          <motion.div
+            className="challenge-reveal"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <Sparkles size={28} />
+            <h3>Round ready</h3>
+            <p className="muted-on-dark">The host will reveal the challenge when the round starts.</p>
+          </motion.div>
         ) : (
           <ChallengeRevealCard
             round={activeRound}

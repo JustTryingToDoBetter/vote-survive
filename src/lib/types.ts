@@ -17,6 +17,8 @@ export type RoundType =
 
 export type RoundStatus =
   | "lobby"
+  | "reveal"
+  | "live"
   | "voting"
   | "locked"
   | "scoring"
@@ -42,7 +44,7 @@ export type PlannedRound = RoundDefinition & {
 export type Room = {
   id: string;
   code: string;
-  host_pin: string;
+  host_pin?: string;
   status: string;
   planned_round_queue?: PlannedRound[] | null;
   created_at?: string;
@@ -121,6 +123,7 @@ export type RoundRecord = {
   current_question_index?: number | null;
   question_status?: QuestionStatus | null;
   question_started_at?: string | null;
+  started_at?: string | null;
   created_at: string;
 };
 

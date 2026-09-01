@@ -6,7 +6,7 @@ import {
   getFastestCorrect,
   isLastQuizQuestion,
 } from "../features/quiz/quizEngine";
-import { supabase } from "../lib/supabase";
+import { getHostSupabase } from "../lib/supabase";
 import { roundColumns } from "../lib/supabaseQueries";
 import type { AnswerSubmission, RoundRecord } from "../lib/types";
 
@@ -41,7 +41,8 @@ export function useQuizActions({
     setLoadError(null);
 
     try {
-      const { data, error } = await supabase
+      const hostSupabase = getHostSupabase();
+      const { data, error } = await hostSupabase
         .from("rounds")
         .update(patch)
         .eq("id", activeRound.id)
@@ -89,7 +90,7 @@ export function useQuizActions({
   }
 
   function endQuizRound() {
-    void updateRound({ question_status: "complete", status: "complete" }, "end");
+    void updateRound({ question_status: "complete", status: "locked" }, "end");
   }
 
   async function awardFastestCorrect() {

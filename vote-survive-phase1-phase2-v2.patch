@@ -1,0 +1,1569 @@
+diff --git a/supabase/migrations/20260522_upgrade_vote_survive.sql b/supabase/migrations/20260522_upgrade_vote_survive.sql
+--- a/supabase/migrations/20260522_upgrade_vote_survive.sql
++++ b/supabase/migrations/20260522_upgrade_vote_survive.sql
+@@ -1,3 +1,56 @@
++create extension if not exists pgcrypto;
++
++-- The original project pre-dated checked-in migrations for the base tables.
++-- Keep the first migration self-contained so `supabase db reset` can rebuild
++-- the project from an empty database.
++create table if not exists public.rooms (
++  id uuid primary key default gen_random_uuid(),
++  code text not null,
++  host_pin text not null,
++  status text not null default 'active',
++  created_at timestamptz not null default now()
++);
++
++create table if not exists public.teams (
++  id uuid primary key default gen_random_uuid(),
++  room_id uuid not null references public.rooms(id) on delete cascade,
++  name text not null,
++  leader_code text not null,
++  score integer not null default 0,
++  created_at timestamptz not null default now()
++);
++
++create table if not exists public.rounds (
++  id uuid primary key default gen_random_uuid(),
++  room_id uuid not null references public.rooms(id) on delete cascade,
++  question text not null default '',
++  challenge text not null default '',
++  status text not null default 'lobby',
++  target_team_id uuid references public.teams(id) on delete set null,
++  created_at timestamptz not null default now()
++);
++
++create table if not exists public.votes (
++  id uuid primary key default gen_random_uuid(),
++  round_id uuid not null references public.rounds(id) on delete cascade,
++  voter_team_id uuid not null references public.teams(id) on delete cascade,
++  target_team_id uuid not null references public.teams(id) on delete cascade,
++  created_at timestamptz not null default now(),
++  unique (round_id, voter_team_id)
++);
++
++create index if not exists rooms_code_idx
++  on public.rooms(code);
++
++create index if not exists teams_room_idx
++  on public.teams(room_id);
++
++create index if not exists rounds_room_idx
++  on public.rounds(room_id);
++
++create index if not exists votes_round_idx
++  on public.votes(round_id);
++
+ alter table public.teams
+   add column if not exists animal text,
+   add column if not exists avatar_emoji text,
+diff --git a/supabase/migrations/20260901_001_game_integrity_and_host_auth.sql b/supabase/migrations/20260901_001_game_integrity_and_host_auth.sql
+new file mode 100644
+--- /dev/null
++++ b/supabase/migrations/20260901_001_game_integrity_and_host_auth.sql
+@@ -0,0 +1,452 @@
++alter table public.rounds
++  add column if not exists started_at timestamptz;
++
++do $$
++begin
++  if not exists (
++    select 1
++    from pg_constraint
++    where conname = 'rounds_status_integrity_check'
++  ) then
++    alter table public.rounds
++      add constraint rounds_status_integrity_check
++      check (
++        status in (
++          'lobby',
++          'reveal',
++          'live',
++          'voting',
++          'locked',
++          'scoring',
++          'complete',
++          'winner'
++        )
++      )
++      not valid;
++  end if;
++end $$;
++
++create or replace function public.request_host_pin()
++returns text
++language sql
++stable
++set search_path = public
++as $$
++  select nullif(
++    coalesce(
++      coalesce(
++        nullif(current_setting('request.headers', true), ''),
++        '{}'
++      )::jsonb ->> 'x-vote-survive-host-pin',
++      ''
++    ),
++    ''
++  );
++$$;
++
++create or replace function public.is_room_host(p_room_id uuid)
++returns boolean
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select exists (
++    select 1
++    from public.rooms
++    where rooms.id = p_room_id
++      and rooms.host_pin = public.request_host_pin()
++  );
++$$;
++
++create or replace function public.is_round_host(p_round_id uuid)
++returns boolean
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select exists (
++    select 1
++    from public.rounds
++    where rounds.id = p_round_id
++      and public.is_room_host(rounds.room_id)
++  );
++$$;
++
++create or replace function public.join_team_session(
++  p_room_id uuid,
++  p_team_id uuid,
++  p_leader_code text
++)
++returns timestamptz
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  joined_time timestamptz := now();
++begin
++  update public.teams
++  set joined_at = joined_time
++  where teams.id = p_team_id
++    and teams.room_id = p_room_id
++    and upper(teams.leader_code) = upper(btrim(p_leader_code));
++
++  if not found then
++    raise exception 'Invalid leader session.';
++  end if;
++
++  return joined_time;
++end;
++$$;
++
++create or replace function public.validate_answer_round_live()
++returns trigger
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  parent_round_type text;
++  parent_round_status text;
++begin
++  select round_type, status
++  into parent_round_type, parent_round_status
++  from public.rounds
++  where rounds.id = new.round_id;
++
++  if parent_round_type in ('quiz_burst', 'bible_speed')
++     and parent_round_status <> 'live' then
++    raise exception 'This quiz round is not live.';
++  end if;
++
++  return new;
++end;
++$$;
++
++drop trigger if exists validate_answer_round_live_trigger
++  on public.answer_submissions;
++create trigger validate_answer_round_live_trigger
++  before insert or update on public.answer_submissions
++  for each row
++  execute function public.validate_answer_round_live();
++
++revoke execute on function public.apply_score_event(uuid, uuid, integer, text, uuid, text)
++  from public, anon, authenticated;
++revoke execute on function public.undo_score_event(uuid)
++  from public, anon, authenticated;
++
++create or replace function public.host_apply_score_event(
++  p_room_id uuid,
++  p_team_id uuid,
++  p_delta integer,
++  p_reason text default 'Manual score',
++  p_round_id uuid default null,
++  p_dedupe_key text default null
++)
++returns table (
++  id uuid,
++  room_id uuid,
++  round_id uuid,
++  team_id uuid,
++  delta integer,
++  reason text,
++  created_at timestamptz,
++  undone_at timestamptz,
++  dedupe_key text,
++  new_score integer
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++begin
++  if not public.is_room_host(p_room_id) then
++    raise exception 'Host authorization failed.';
++  end if;
++
++  return query
++  select *
++  from public.apply_score_event(
++    p_room_id,
++    p_team_id,
++    p_delta,
++    p_reason,
++    p_round_id,
++    p_dedupe_key
++  );
++end;
++$$;
++
++create or replace function public.host_undo_score_event(
++  p_score_event_id uuid
++)
++returns table (
++  id uuid,
++  room_id uuid,
++  round_id uuid,
++  team_id uuid,
++  delta integer,
++  reason text,
++  created_at timestamptz,
++  undone_at timestamptz,
++  dedupe_key text,
++  new_score integer
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  event_room_id uuid;
++begin
++  select score_events.room_id
++  into event_room_id
++  from public.score_events
++  where score_events.id = p_score_event_id;
++
++  if event_room_id is null or not public.is_room_host(event_room_id) then
++    raise exception 'Host authorization failed.';
++  end if;
++
++  return query
++  select *
++  from public.undo_score_event(p_score_event_id);
++end;
++$$;
++
++create or replace function public.host_transfer_score(
++  p_room_id uuid,
++  p_from_team_id uuid,
++  p_to_team_id uuid,
++  p_amount integer,
++  p_reason text default 'Score transfer',
++  p_round_id uuid default null,
++  p_dedupe_key text default null
++)
++returns table (
++  from_score integer,
++  to_score integer
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_from_score integer;
++  v_to_score integer;
++  base_key text;
++begin
++  if not public.is_room_host(p_room_id) then
++    raise exception 'Host authorization failed.';
++  end if;
++
++  if p_amount <= 0 then
++    raise exception 'Transfer amount must be greater than zero.';
++  end if;
++
++  if p_from_team_id = p_to_team_id then
++    raise exception 'A team cannot transfer points to itself.';
++  end if;
++
++  base_key := coalesce(
++    nullif(p_dedupe_key, ''),
++    'transfer:' || p_room_id::text || ':' || gen_random_uuid()::text
++  );
++
++  perform pg_advisory_xact_lock(hashtext(base_key));
++
++  select result.new_score
++  into v_from_score
++  from public.apply_score_event(
++    p_room_id,
++    p_from_team_id,
++    -p_amount,
++    p_reason || ' debit',
++    p_round_id,
++    base_key || ':debit'
++  ) as result;
++
++  select result.new_score
++  into v_to_score
++  from public.apply_score_event(
++    p_room_id,
++    p_to_team_id,
++    p_amount,
++    p_reason || ' credit',
++    p_round_id,
++    base_key || ':credit'
++  ) as result;
++
++  return query select v_from_score, v_to_score;
++end;
++$$;
++
++grant execute on function public.join_team_session(uuid, uuid, text)
++  to anon, authenticated;
++grant execute on function public.host_apply_score_event(uuid, uuid, integer, text, uuid, text)
++  to anon, authenticated;
++grant execute on function public.host_undo_score_event(uuid)
++  to anon, authenticated;
++grant execute on function public.host_transfer_score(uuid, uuid, uuid, integer, text, uuid, text)
++  to anon, authenticated;
++
++alter table public.rooms enable row level security;
++alter table public.teams enable row level security;
++alter table public.rounds enable row level security;
++alter table public.votes enable row level security;
++alter table public.answer_submissions enable row level security;
++alter table public.score_events enable row level security;
++
++do $$
++declare
++  policy_row record;
++begin
++  for policy_row in
++    select schemaname, tablename, policyname
++    from pg_policies
++    where schemaname = 'public'
++      and tablename in (
++        'rooms',
++        'teams',
++        'rounds',
++        'votes',
++        'answer_submissions',
++        'score_events'
++      )
++  loop
++    execute format(
++      'drop policy if exists %I on %I.%I',
++      policy_row.policyname,
++      policy_row.schemaname,
++      policy_row.tablename
++    );
++  end loop;
++end $$;
++
++create policy rooms_read
++  on public.rooms for select
++  to anon, authenticated
++  using (true);
++
++create policy rooms_create_host
++  on public.rooms for insert
++  to anon, authenticated
++  with check (host_pin = public.request_host_pin());
++
++create policy rooms_update_host
++  on public.rooms for update
++  to anon, authenticated
++  using (public.is_room_host(id))
++  with check (host_pin = public.request_host_pin());
++
++create policy rooms_delete_host
++  on public.rooms for delete
++  to anon, authenticated
++  using (public.is_room_host(id));
++
++create policy teams_read
++  on public.teams for select
++  to anon, authenticated
++  using (true);
++
++create policy teams_insert_host
++  on public.teams for insert
++  to anon, authenticated
++  with check (public.is_room_host(room_id));
++
++create policy teams_update_host
++  on public.teams for update
++  to anon, authenticated
++  using (public.is_room_host(room_id))
++  with check (public.is_room_host(room_id));
++
++create policy teams_delete_host
++  on public.teams for delete
++  to anon, authenticated
++  using (public.is_room_host(room_id));
++
++create policy rounds_read
++  on public.rounds for select
++  to anon, authenticated
++  using (true);
++
++create policy rounds_insert_host
++  on public.rounds for insert
++  to anon, authenticated
++  with check (public.is_room_host(room_id));
++
++create policy rounds_update_host
++  on public.rounds for update
++  to anon, authenticated
++  using (public.is_room_host(room_id))
++  with check (public.is_room_host(room_id));
++
++create policy rounds_delete_host
++  on public.rounds for delete
++  to anon, authenticated
++  using (public.is_room_host(room_id));
++
++create policy votes_read
++  on public.votes for select
++  to anon, authenticated
++  using (true);
++
++create policy votes_submit
++  on public.votes for insert
++  to anon, authenticated
++  with check (true);
++
++create policy votes_change_while_live
++  on public.votes for update
++  to anon, authenticated
++  using (true)
++  with check (true);
++
++create policy votes_delete_host
++  on public.votes for delete
++  to anon, authenticated
++  using (public.is_round_host(round_id));
++
++create policy answers_read
++  on public.answer_submissions for select
++  to anon, authenticated
++  using (true);
++
++create policy answers_submit
++  on public.answer_submissions for insert
++  to anon, authenticated
++  with check (true);
++
++create policy answers_change
++  on public.answer_submissions for update
++  to anon, authenticated
++  using (true)
++  with check (true);
++
++create policy answers_delete_host
++  on public.answer_submissions for delete
++  to anon, authenticated
++  using (public.is_round_host(round_id));
++
++create policy score_events_read
++  on public.score_events for select
++  to anon, authenticated
++  using (true);
++
++create policy score_events_delete_host
++  on public.score_events for delete
++  to anon, authenticated
++  using (public.is_room_host(room_id));
++
++revoke select on public.rooms from anon, authenticated;
++grant select (id, code, status, planned_round_queue, created_at)
++  on public.rooms to anon, authenticated;
++
++grant insert, update, delete on public.rooms to anon, authenticated;
++grant select, insert, update, delete on public.teams to anon, authenticated;
++grant select, insert, update, delete on public.rounds to anon, authenticated;
++grant select, insert, update, delete on public.votes to anon, authenticated;
++grant select, insert, update, delete on public.answer_submissions to anon, authenticated;
++grant select, delete on public.score_events to anon, authenticated;
+diff --git a/src/app/appHelpers.ts b/src/app/appHelpers.ts
+--- a/src/app/appHelpers.ts
++++ b/src/app/appHelpers.ts
+@@ -8,6 +8,7 @@ import type {
+ } from "../lib/types";
+ 
+ export const HOST_SESSION_KEY = "vote-survive-host-session";
++export const LEADER_SESSION_KEY = "vote-survive-leader-session";
+ 
+ export function generateCode(length = 5) {
+   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+@@ -70,5 +71,6 @@ export function toRoundRecord(row: Record<string, unknown>): RoundRecord {
+     question_started_at:
+       (row.question_started_at as string | null | undefined) ?? null,
++    started_at: (row.started_at as string | null | undefined) ?? null,
+     created_at: String(row.created_at),
+   };
+ }
+diff --git a/src/lib/types.ts b/src/lib/types.ts
+--- a/src/lib/types.ts
++++ b/src/lib/types.ts
+@@ -12,6 +12,8 @@ export type RoundType =
+ 
+ export type RoundStatus =
+   | "lobby"
++  | "reveal"
++  | "live"
+   | "voting"
+   | "locked"
+   | "scoring"
+@@ -42,7 +44,7 @@ export type PlannedRound = RoundDefinition & {
+ export type Room = {
+   id: string;
+   code: string;
+-  host_pin: string;
++  host_pin?: string;
+   status: string;
+   planned_round_queue?: PlannedRound[] | null;
+   created_at?: string;
+@@ -108,5 +110,6 @@ export type RoundRecord = {
+   current_question_index?: number | null;
+   question_status?: QuestionStatus | null;
+   question_started_at?: string | null;
++  started_at?: string | null;
+   created_at: string;
+ };
+diff --git a/src/lib/supabase.ts b/src/lib/supabase.ts
+--- a/src/lib/supabase.ts
++++ b/src/lib/supabase.ts
+@@ -1,12 +1,48 @@
+ // src/lib/supabase.ts
+ import { createClient } from "@supabase/supabase-js";
+ 
+ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
++const fallbackUrl = "https://example.supabase.co";
++const fallbackKey = "missing-supabase-anon-key";
+ 
+ export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+ 
+ export const supabase = createClient(
+-  supabaseUrl || "https://example.supabase.co",
+-  supabaseAnonKey || "missing-supabase-anon-key"
++  supabaseUrl || fallbackUrl,
++  supabaseAnonKey || fallbackKey
+ );
++
++export function createHostSupabase(hostPin: string) {
++  const normalizedPin = hostPin.trim();
++  if (!normalizedPin) {
++    throw new Error("Host session is missing.");
++  }
++
++  return createClient(supabaseUrl || fallbackUrl, supabaseAnonKey || fallbackKey, {
++    global: {
++      headers: {
++        "x-vote-survive-host-pin": normalizedPin,
++      },
++    },
++  });
++}
++
++export function getHostSupabase() {
++  if (typeof window === "undefined") {
++    throw new Error("Host actions are only available in the browser.");
++  }
++
++  const stored = window.localStorage.getItem("vote-survive-host-session");
++  if (!stored) {
++    throw new Error("Host session has expired. Re-open the room as host.");
++  }
++
++  try {
++    const parsed = JSON.parse(stored) as { hostPin?: string };
++    if (!parsed.hostPin) throw new Error("Host PIN missing.");
++    return createHostSupabase(parsed.hostPin);
++  } catch {
++    throw new Error("Host session is invalid. Re-open the room as host.");
++  }
++}
+diff --git a/src/lib/supabaseQueries.ts b/src/lib/supabaseQueries.ts
+--- a/src/lib/supabaseQueries.ts
++++ b/src/lib/supabaseQueries.ts
+@@ -3,10 +3,10 @@ import { supabase } from "./supabase";
+ import type { AnswerSubmission, Room, RoundRecord, ScoreEvent, Team, VoteRow } from "./types";
+ 
+-export const roomColumns = "id,code,host_pin,status,planned_round_queue,created_at";
++export const roomColumns = "id,code,status,planned_round_queue,created_at";
+ export const teamColumns =
+   "id,room_id,name,leader_code,score,joined_at,animal,avatar_emoji,avatar_image,color";
+ export const roundColumns =
+-  "id,room_id,round_number,round_type,title,prompt,question,challenge,scoring_guide,instructions,twist,status,target_team_id,is_final,timer_seconds,answer_options,correct_answer,question_set,current_question_index,question_status,question_started_at,created_at";
++  "id,room_id,round_number,round_type,title,prompt,question,challenge,scoring_guide,instructions,twist,status,target_team_id,is_final,timer_seconds,answer_options,correct_answer,question_set,current_question_index,question_status,question_started_at,started_at,created_at";
+ export const voteColumns = "id,round_id,voter_team_id,target_team_id";
+ export const answerColumns =
+   "id,round_id,team_id,question_index,answer,is_correct,submitted_at";
+@@ -113,5 +113,5 @@ export async function fetchScores(roomId: string) {
+ }
+ 
+ export function getActiveRound(rounds: RoundRecord[]) {
+-  return rounds.find((round) => round.status !== "complete") ?? null;
++  return rounds[0] ?? null;
+ }
+diff --git a/src/features/gameflow/gamePhases.ts b/src/features/gameflow/gamePhases.ts
+--- a/src/features/gameflow/gamePhases.ts
++++ b/src/features/gameflow/gamePhases.ts
+@@ -39,6 +39,6 @@ export const hostPrimaryActionLabels: Record<HostPhase, string> = {
+   lobby: "Start Round",
+   round_reveal: "Start Round",
+-  voting: "Lock Votes",
++  voting: "Lock Round",
+   locked: "Open Scoring",
+   scoring: "Complete Round",
+   leaderboard: "Start Next Round",
+@@ -73,9 +73,10 @@ export function getHostPhase(
+ 
+   if (!activeRound) return "lobby";
+ 
+-  if (activeRound.status === "voting") return "voting";
++  if (activeRound.status === "reveal" || activeRound.status === "lobby") return "round_reveal";
++  if (activeRound.status === "voting" || activeRound.status === "live") return "voting";
+   if (activeRound.status === "locked") return "locked";
+   if (activeRound.status === "scoring") return "scoring";
+   if (activeRound.status === "complete") return "leaderboard";
+ 
+   return "round_reveal";
+@@ -94,9 +96,11 @@ export function getProjectorState(
+     return "Winner reveal";
+   }
+   if (!activeRound) return "Waiting for host";
++  if (activeRound.status === "reveal" || activeRound.status === "lobby") return "Round reveal";
+   if (activeRound.status === "voting") return "Voting open";
++  if (activeRound.status === "live") return "Task live";
+   if (activeRound.status === "locked") return "Votes locked";
+-  if (activeRound.status === "scoring") return "Challenge revealed";
+-  if (activeRound.status === "complete") return "Scoring";
++  if (activeRound.status === "scoring") return "Scoring";
++  if (activeRound.status === "complete") return "Leaderboard";
+   return "Round starting";
+ }
+diff --git a/src/features/gameflow/HostGameflow.tsx b/src/features/gameflow/HostGameflow.tsx
+--- a/src/features/gameflow/HostGameflow.tsx
++++ b/src/features/gameflow/HostGameflow.tsx
+@@ -13,7 +13,9 @@
+   activeRound: RoundRecord | null;
+   showWinner: boolean;
+   startRound: () => void;
++  beginRound: () => void;
+   lockVotes: () => void;
++  openScoring: () => void;
+   completeRound: () => void;
+   revealWinner: () => void;
+   resetGame: () => void;
+@@ -24,7 +26,9 @@
+   activeRound,
+   showWinner,
+   startRound,
++  beginRound,
+   lockVotes,
++  openScoring,
+   completeRound,
+   revealWinner,
+   resetGame,
+@@ -32,20 +36,41 @@
+   const phase = getHostPhase(room, activeRound, showWinner);
+   const phaseIndex = hostPhaseOrder.indexOf(phase);
+   const primaryLabel =
+-    phase === "final_reveal"
++    phase === "voting"
++      ? activeRound?.status === "voting"
++        ? "Lock Votes"
++        : "Lock Task"
++      : phase === "leaderboard" && activeRound?.is_final
++      ? "Reveal Winner"
++      : phase === "final_reveal"
+       ? activeRound?.status === "winner" || room.status === "winner"
+         ? "Reset"
+         : "View Final Results"
+       : hostPrimaryActionLabels[phase];
+ 
+   function runPrimaryAction() {
++    if (phase === "round_reveal") {
++      beginRound();
++      return;
++    }
++
+     if (phase === "voting") {
+       lockVotes();
+       return;
+     }
+ 
++    if (phase === "locked") {
++      openScoring();
++      return;
++    }
++
+     if (phase === "scoring") {
+       completeRound();
++      return;
++    }
++
++    if (phase === "leaderboard" && activeRound?.is_final) {
++      revealWinner();
+       return;
+     }
+ 
+@@ -55,6 +80,11 @@
+         return;
+       }
+       revealWinner();
++      return;
++    }
++
++    if (phase === "lobby" || phase === "leaderboard") {
++      startRound();
+       return;
+     }
+ 
+diff --git a/src/hooks/useGameActions.ts b/src/hooks/useGameActions.ts
+--- a/src/hooks/useGameActions.ts
++++ b/src/hooks/useGameActions.ts
+@@ -2,6 +2,7 @@ import { useRef, useState, type Dispatch, type SetStateAction } from "react";
+ import { buildRoundDefinition } from "../data/gameContent";
+ import {
+   HOST_SESSION_KEY,
++  LEADER_SESSION_KEY,
+   createDefaultDrafts,
+   generateCode,
+   normalizeTeam,
+@@ -13,7 +14,8 @@ import {
+   getCurrentQuestionIndex,
+   isRapidQuizRound,
+ } from "../features/quiz/quizEngine";
+-import { supabase } from "../lib/supabase";
++import { roundRequiresVoting } from "../features/gameflow/gamePhases";
++import { createHostSupabase, getHostSupabase, supabase } from "../lib/supabase";
+ import {
+   fetchRoomByCode,
+   fetchTeamByLeaderCode,
+@@ -134,8 +136,9 @@ export function useGameActions({
+     try {
+       const code = generateCode();
+       const hostPin = generateCode(6);
++      const hostSupabase = createHostSupabase(hostPin);
+ 
+-      const { data: createdRoom, error: roomError } = await supabase
++      const { data: createdRoom, error: roomError } = await hostSupabase
+         .from("rooms")
+         .insert({ code, host_pin: hostPin, status: "active" })
+         .select(roomColumns)
+@@ -144,7 +147,7 @@ export function useGameActions({
+ 
+       if (roomError || !createdRoom) throw roomError ?? new Error("Room creation failed.");
+ 
+-      const { data: createdTeams, error: teamsError } = await supabase
++      const { data: createdTeams, error: teamsError } = await hostSupabase
+         .from("teams")
+         .insert(
+           createDefaultDrafts().map((team) => ({
+@@ -191,19 +194,21 @@ export function useGameActions({
+         teamCodeInput.trim().toUpperCase()
+       );
+ 
+-      const { error: joinedError } = await supabase
+-        .from("teams")
+-        .update({ joined_at: new Date().toISOString() })
+-        .eq("id", foundTeam.id);
++      const joinedAt = new Date().toISOString();
++      const { error: joinedError } = await supabase.rpc("join_team_session", {
++        p_room_id: foundRoom.id,
++        p_team_id: foundTeam.id,
++        p_leader_code: teamCodeInput.trim().toUpperCase(),
++      });
+ 
+-      if (joinedError && !joinedError.message.toLowerCase().includes("joined_at")) {
++      if (joinedError) {
+         throw joinedError;
+       }
+ 
+       setRoom(foundRoom as Room);
+       setLeaderTeam(
+         normalizeTeam(
+-          { ...(foundTeam as Team), joined_at: new Date().toISOString() },
++          { ...(foundTeam as Team), joined_at: joinedAt },
+           0
+         )
+       );
+@@ -207,4 +213,11 @@ export function useGameActions({
+       if (typeof window !== "undefined") {
++        window.localStorage.setItem(
++          LEADER_SESSION_KEY,
++          JSON.stringify({
++            roomCode: foundRoom.code,
++            teamCode: teamCodeInput.trim().toUpperCase(),
++          })
++        );
+         const url = new URL(window.location.href);
+         url.pathname = "/join";
+         url.searchParams.set("room", foundRoom.code);
+@@ -228,7 +241,8 @@ export function useGameActions({
+     try {
+       const definition = plannedDefinition ?? buildRoundDefinition(roundType);
+       const nextRoundNumber = (rounds[0]?.round_number ?? 0) + 1;
+-      const status: RoundStatus = definition.requiresVoting ? "voting" : "scoring";
++      const status: RoundStatus = "reveal";
++      const hostSupabase = getHostSupabase();
+       const selectedTimer =
+         Number(customTimerInput) > 0 ? Number(customTimerInput) : timerDuration;
+ 
+@@ -254,9 +268,10 @@ export function useGameActions({
+         current_question_index: definition.currentQuestionIndex ?? 0,
+         question_status: definition.questionStatus ?? "waiting",
+         question_started_at: null,
++        started_at: null,
+       };
+ 
+-      const { data: insertedRound, error } = await supabase
++      const { data: insertedRound, error } = await hostSupabase
+         .from("rounds")
+         .insert(roundPayload)
+         .select(roundColumns)
+@@ -273,7 +288,8 @@ export function useGameActions({
+         delete legacyPayload.current_question_index;
+         delete legacyPayload.question_status;
+         delete legacyPayload.question_started_at;
+-        const { error: retryError } = await supabase
++        delete legacyPayload.started_at;
++        const { error: retryError } = await hostSupabase
+           .from("rounds")
+           .insert(legacyPayload);
+ 
+@@ -281,5 +297,5 @@ export function useGameActions({
+         if (retryError) {
+-          const { error: minimalRetryError } = await supabase
++          const { error: minimalRetryError } = await hostSupabase
+             .from("rounds")
+             .insert(toLegacyRoundPayload(roundPayload));
+ 
+@@ -296,7 +312,7 @@ export function useGameActions({
+         setActiveRound(mappedRound);
+       }
+ 
+-      await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
++      await hostSupabase.from("rooms").update({ status: "active" }).eq("id", room.id);
+       setRoom((current) => (current ? { ...current, status: "active" } : current));
+ 
+       setSelectedRoundType(definition.type);
+@@ -310,4 +326,36 @@ export function useGameActions({
+     }
+   }
+ 
++  async function beginRound() {
++    if (!activeRound) return;
++    if (activeRound.status !== "reveal" && activeRound.status !== "lobby") return;
++
++    const nextStatus: RoundStatus = roundRequiresVoting(activeRound.round_type)
++      ? "voting"
++      : "live";
++    const startedAt = new Date().toISOString();
++    const hostSupabase = getHostSupabase();
++
++    const { error } = await hostSupabase
++      .from("rounds")
++      .update({ status: nextStatus, started_at: startedAt })
++      .eq("id", activeRound.id);
++
++    if (error) {
++      setLoadError(error.message);
++      return;
++    }
++
++    const patch = { status: nextStatus, started_at: startedAt };
++    setActiveRound((current) =>
++      current?.id === activeRound.id ? { ...current, ...patch } : current
++    );
++    setRounds((current) =>
++      current.map((round) =>
++        round.id === activeRound.id ? { ...round, ...patch } : round
++      )
++    );
++    sound.play("roundStart");
++  }
++
+   async function submitVote(targetTeamId: string) {
+@@ -461,13 +510,40 @@ export function useGameActions({
+   async function lockVotes() {
+     if (!activeRound) return;
++    if (activeRound.status !== "voting" && activeRound.status !== "live") return;
+ 
+-    const winner = sortedVoteCounts[0];
++    let targetTeamId = activeRound.target_team_id;
++
++    if (activeRound.status === "voting") {
++      const highestCount = Math.max(0, ...sortedVoteCounts.map((entry) => entry.count));
++
++      if (highestCount === 0) {
++        setLoadError("No votes were submitted. Keep voting open or choose another round.");
++        return;
++      }
++
++      const tiedLeaders = sortedVoteCounts.filter((entry) => entry.count === highestCount);
++      const randomIndex =
++        tiedLeaders.length > 1
++          ? crypto.getRandomValues(new Uint32Array(1))[0] % tiedLeaders.length
++          : 0;
++      const winner = tiedLeaders[randomIndex];
++      targetTeamId = winner?.team.id ?? null;
++
++      if (tiedLeaders.length > 1 && winner) {
++        setLoadError(
++          `Vote tied at ${highestCount}. Random tiebreak selected ${winner.team.name}.`
++        );
++      } else {
++        setLoadError(null);
++      }
++    }
+ 
+-    const { error } = await supabase
++    const hostSupabase = getHostSupabase();
++    const { error } = await hostSupabase
+       .from("rounds")
+       .update({
+-        status: "scoring",
+-        target_team_id: winner?.team.id ?? null,
++        status: "locked",
++        target_team_id: targetTeamId,
+       })
+       .eq("id", activeRound.id);
+ 
+@@ -493,17 +598,46 @@ export function useGameActions({
+ 
+-      setActiveRound((current) =>
+-        current?.id === activeRound.id
+-          ? { ...current, status: "scoring", target_team_id: winner?.team.id ?? null }
+-          : current
+-      );
++    setActiveRound((current) =>
++      current?.id === activeRound.id
++        ? { ...current, status: "locked", target_team_id: targetTeamId }
++        : current
++    );
+     setRounds((current) =>
+       current.map((round) =>
+         round.id === activeRound.id
+-          ? { ...round, status: "scoring", target_team_id: winner?.team.id ?? null }
++          ? { ...round, status: "locked", target_team_id: targetTeamId }
+           : round
+       )
+     );
+     sound.play("reveal");
+   }
+ 
++  async function openScoring() {
++    if (!activeRound || activeRound.status !== "locked") return;
++
++    if (roundRequiresVoting(activeRound.round_type) && !activeRound.target_team_id) {
++      setLoadError("Choose a pressure team before opening scoring.");
++      return;
++    }
++
++    const hostSupabase = getHostSupabase();
++    const { error } = await hostSupabase
++      .from("rounds")
++      .update({ status: "scoring" })
++      .eq("id", activeRound.id);
++
++    if (error) {
++      setLoadError(error.message);
++      return;
++    }
++
++    setActiveRound((current) =>
++      current?.id === activeRound.id ? { ...current, status: "scoring" } : current
++    );
++    setRounds((current) =>
++      current.map((round) =>
++        round.id === activeRound.id ? { ...round, status: "scoring" } : round
++      )
++    );
++  }
++
+   async function applyScore(
+@@ -529,7 +666,8 @@ export function useGameActions({
+         ].join(":");
+ 
+-      const { data, error } = await supabase
+-        .rpc("apply_score_event", {
++      const hostSupabase = getHostSupabase();
++      const { data, error } = await hostSupabase
++        .rpc("host_apply_score_event", {
+           p_room_id: room.id,
+           p_team_id: teamId,
+           p_delta: finalDelta,
+@@ -567,8 +705,9 @@ export function useGameActions({
+     const team = teams.find((entry) => entry.id === latestScoreEvent.team_id);
+     if (!team) return;
+ 
+-    const { data, error } = await supabase
+-      .rpc("undo_score_event", {
++    const hostSupabase = getHostSupabase();
++    const { data, error } = await hostSupabase
++      .rpc("host_undo_score_event", {
+         p_score_event_id: latestScoreEvent.id,
+       })
+       .single();
+@@ -590,38 +729,64 @@ export function useGameActions({
+     );
+   }
+ 
++  async function transferScore(
++    fromTeamId: string,
++    toTeamId: string,
++    amount: number,
++    reason: string
++  ) {
++    if (!room || amount <= 0 || fromTeamId === toTeamId) return;
++
++    const hostSupabase = getHostSupabase();
++    const { error } = await hostSupabase.rpc("host_transfer_score", {
++      p_room_id: room.id,
++      p_from_team_id: fromTeamId,
++      p_to_team_id: toTeamId,
++      p_amount: amount,
++      p_reason: reason,
++      p_round_id: activeRound?.id ?? null,
++      p_dedupe_key: [
++        "transfer",
++        room.id,
++        activeRound?.id ?? "room",
++        fromTeamId,
++        toTeamId,
++        amount,
++        crypto.randomUUID(),
++      ].join(":"),
++    });
++
++    if (error) {
++      setLoadError(error.message);
++      return;
++    }
++
++    await refreshRoomData(room.id);
++    sound.play("score");
++  }
++
+   async function completeRound() {
+     if (!activeRound) return;
++    if (activeRound.status !== "scoring") return;
+ 
+-    const nextStatus: RoundStatus =
+-      activeRound.round_type === "final_double" ? "winner" : "complete";
+-
+-    const { error } = await supabase
++    const hostSupabase = getHostSupabase();
++    const { error } = await hostSupabase
+       .from("rounds")
+-      .update({ status: nextStatus })
++      .update({ status: "complete" })
+       .eq("id", activeRound.id);
+ 
+     if (error) {
+       setLoadError(error.message);
+       return;
+     }
+ 
+-    if (activeRound.round_type === "final_double") {
+-      setShowWinner(true);
+-      setActiveRound((current) =>
+-        current?.id === activeRound.id ? { ...current, status: "winner" } : current
+-      );
+-      setRounds((current) =>
+-        current.map((round) =>
+-          round.id === activeRound.id ? { ...round, status: "winner" } : round
+-        )
+-      );
+-      sound.play("winner");
+-      return;
+-    }
+-
+-    await supabase.from("rooms").update({ status: "active" }).eq("id", activeRound.room_id);
+-    setActiveRound(null);
++    await hostSupabase
++      .from("rooms")
++      .update({ status: "active" })
++      .eq("id", activeRound.room_id);
++    setActiveRound((current) =>
++      current?.id === activeRound.id ? { ...current, status: "complete" } : current
++    );
+     setRounds((current) =>
+       current.map((round) =>
+         round.id === activeRound.id ? { ...round, status: "complete" } : round
+@@ -638,8 +810,34 @@ export function useGameActions({
+ 
+   async function revealWinner() {
+     if (!room) return;
+-    setShowWinner(true);
++    if (teams.length === 0) {
++      setLoadError("Cannot reveal a winner without teams.");
++      return;
++    }
++
+-    await supabase.from("rooms").update({ status: "winner" }).eq("id", room.id);
++
++    const topScore = Math.max(...teams.map((team) => team.score));
++    const tiedWinners = teams.filter((team) => team.score === topScore);
++
++    if (tiedWinners.length !== 1) {
++      const names = tiedWinners.map((team) => team.name).join(", ");
++      setLoadError(
++        `Final score is tied between ${names}. Run a tiebreak round before revealing the winner.`
++      );
++      return;
++    }
++
++    const hostSupabase = getHostSupabase();
++    const { error } = await hostSupabase
++      .from("rooms")
++      .update({ status: "winner" })
++      .eq("id", room.id);
++    if (error) {
++      setLoadError(error.message);
++      return;
++    }
++
++    setShowWinner(true);
+     setRoom((current) => (current ? { ...current, status: "winner" } : current));
+     sound.play("winner");
+   }
+@@ -653,17 +842,18 @@ export function useGameActions({
+     setLoadError(null);
+ 
+     try {
++      const hostSupabase = getHostSupabase();
+       const roundIds = rounds.map((round) => round.id);
+ 
+       if (roundIds.length > 0) {
+-        await supabase.from("votes").delete().in("round_id", roundIds);
+-        await supabase.from("answer_submissions").delete().in("round_id", roundIds);
++        await hostSupabase.from("votes").delete().in("round_id", roundIds);
++        await hostSupabase.from("answer_submissions").delete().in("round_id", roundIds);
+       }
+ 
+-      await supabase.from("score_events").delete().eq("room_id", room.id);
+-      await supabase.from("rounds").delete().eq("room_id", room.id);
++      await hostSupabase.from("score_events").delete().eq("room_id", room.id);
++      await hostSupabase.from("rounds").delete().eq("room_id", room.id);
+       await Promise.all(
+-        teams.map((team) => supabase.from("teams").update({ score: 0 }).eq("id", team.id))
++        teams.map((team) => hostSupabase.from("teams").update({ score: 0 }).eq("id", team.id))
+       );
+-      await supabase.from("rooms").update({ status: "active" }).eq("id", room.id);
++      await hostSupabase.from("rooms").update({ status: "active" }).eq("id", room.id);
+       setShowWinner(false);
+@@ -687,6 +877,7 @@ export function useGameActions({
+     teamId: string,
+     patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>
+   ) {
+-    const { error } = await supabase.from("teams").update(patch).eq("id", teamId);
++    const hostSupabase = getHostSupabase();
++    const { error } = await hostSupabase.from("teams").update(patch).eq("id", teamId);
+ 
+     if (error) {
+@@ -705,6 +896,7 @@ export function useGameActions({
+       >
+     >
+   ) {
+-    const { error } = await supabase.from("rounds").update(patch).eq("id", roundId);
++    const hostSupabase = getHostSupabase();
++    const { error } = await hostSupabase.from("rounds").update(patch).eq("id", roundId);
+ 
+     if (error) {
+@@ -722,10 +914,13 @@ export function useGameActions({
+     createRoom,
+     joinAsLeader,
+     startRound,
++    beginRound,
+     submitVote,
+     submitAnswer,
+     lockVotes,
++    openScoring,
+     applyScore,
++    transferScore,
+     undoLastScore,
+     completeRound,
+     revealWinner,
+diff --git a/src/hooks/useRoomSession.ts b/src/hooks/useRoomSession.ts
+--- a/src/hooks/useRoomSession.ts
++++ b/src/hooks/useRoomSession.ts
+@@ -1,11 +1,12 @@
+ import { useCallback, useEffect, useRef, useState } from "react";
+-import { HOST_SESSION_KEY, normalizeTeam, toRoundRecord } from "../app/appHelpers";
++import { HOST_SESSION_KEY, LEADER_SESSION_KEY, normalizeTeam, toRoundRecord } from "../app/appHelpers";
+ import { LIVE_SYNC_INTERVAL_MS, REALTIME_DEBOUNCE_MS } from "../lib/sessionConfig";
+ import { supabase } from "../lib/supabase";
+ import {
+   fetchAnswers,
+   fetchRoom,
+   fetchRoomByCode,
++  fetchTeamByLeaderCode,
+   fetchRounds,
+   fetchScores,
+   fetchTeams,
+@@ -273,7 +273,49 @@
+       return;
+     }
+ 
+-    if (initialPath === "leader") return;
++    if (initialPath === "leader") {
++      const storedLeader = window.localStorage.getItem(LEADER_SESSION_KEY);
++      if (!storedLeader) return;
++
++      try {
++        const parsed = JSON.parse(storedLeader) as {
++          roomCode?: string;
++          teamCode?: string;
++        };
++        const storedRoomCode = parsed.roomCode?.trim().toUpperCase() ?? "";
++        const storedTeamCode = parsed.teamCode?.trim().toUpperCase() ?? "";
++
++        if (!storedRoomCode || !storedTeamCode) {
++          window.localStorage.removeItem(LEADER_SESSION_KEY);
++          return;
++        }
++
++        if (initialRoomCode && storedRoomCode !== initialRoomCode) return;
++
++        window.setTimeout(() => {
++          void (async () => {
++            try {
++              setIsLoading(true);
++              const foundRoom = await fetchRoomByCode(storedRoomCode);
++              const foundTeam = await fetchTeamByLeaderCode(foundRoom.id, storedTeamCode);
++              setRoom(foundRoom);
++              setRoomCodeInput(foundRoom.code);
++              setTeamCodeInput(storedTeamCode);
++              setLeaderTeam(foundTeam);
++              setMode("leader");
++              await refreshRoomData(foundRoom.id);
++            } catch {
++              window.localStorage.removeItem(LEADER_SESSION_KEY);
++            } finally {
++              setIsLoading(false);
++            }
++          })();
++        }, 0);
++      } catch {
++        window.localStorage.removeItem(LEADER_SESSION_KEY);
++      }
++      return;
++    }
+ 
+     const stored = window.localStorage.getItem(HOST_SESSION_KEY);
+     if (!stored) return;
+@@ -286,7 +328,7 @@
+     } catch {
+       window.localStorage.removeItem(HOST_SESSION_KEY);
+     }
+-  }, [initialPath, initialRoomCode, loadRoomByCode]);
++  }, [initialPath, initialRoomCode, loadRoomByCode, refreshRoomData, setMode]);
+ 
+   useEffect(() => {
+     if (!room?.id) return;
+@@ -323,11 +323,11 @@
+           const round = toRoundRecord(payload.new as Record<string, unknown>);
+           setRounds((current) => sortRounds(upsertById(current, round)));
+           setActiveRound((current) => {
+-            if (current?.id === round.id) {
+-              return round.status === "complete" ? null : round;
+-            }
+-            if (round.status !== "complete") return round;
+-            return current;
++            if (!current || current.id === round.id) return round;
++
++            const currentCreatedAt = new Date(current.created_at).getTime();
++            const nextCreatedAt = new Date(round.created_at).getTime();
++            return nextCreatedAt >= currentCreatedAt ? round : current;
+           });
+         }
+       )
+diff --git a/src/hooks/useQuizActions.ts b/src/hooks/useQuizActions.ts
+--- a/src/hooks/useQuizActions.ts
++++ b/src/hooks/useQuizActions.ts
+@@ -7,5 +7,5 @@ import {
+   isLastQuizQuestion,
+ } from "../features/quiz/quizEngine";
+-import { supabase } from "../lib/supabase";
++import { getHostSupabase } from "../lib/supabase";
+ import { roundColumns } from "../lib/supabaseQueries";
+ import type { AnswerSubmission, RoundRecord } from "../lib/types";
+@@ -34,7 +34,8 @@ export function useQuizActions({
+     setLoadError(null);
+ 
+     try {
+-      const { data, error } = await supabase
++      const hostSupabase = getHostSupabase();
++      const { data, error } = await hostSupabase
+         .from("rounds")
+         .update(patch)
+         .eq("id", activeRound.id)
+@@ -77,5 +78,5 @@ export function useQuizActions({
+   }
+ 
+   function endQuizRound() {
+-    void updateRound({ question_status: "complete", status: "complete" }, "end");
++    void updateRound({ question_status: "complete", status: "locked" }, "end");
+   }
+diff --git a/src/hooks/useShowModeActions.ts b/src/hooks/useShowModeActions.ts
+--- a/src/hooks/useShowModeActions.ts
++++ b/src/hooks/useShowModeActions.ts
+@@ -1,5 +1,5 @@
+ import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+ import { buildRoundDefinition } from "../data/gameContent";
+-import { supabase } from "../lib/supabase";
++import { getHostSupabase } from "../lib/supabase";
+ import { roomColumns } from "../lib/supabaseQueries";
+ import type { PlannedRound, Room, RoundDefinition, RoundRecord, RoundType } from "../lib/types";
+@@ -65,7 +65,8 @@ export function useShowModeActions({
+     );
+ 
+     try {
+-      const { data, error } = await supabase
++      const hostSupabase = getHostSupabase();
++      const { data, error } = await hostSupabase
+         .from("rooms")
+         .update({ planned_round_queue: nextQueue })
+         .eq("id", room.id)
+diff --git a/src/app/App.tsx b/src/app/App.tsx
+--- a/src/app/App.tsx
++++ b/src/app/App.tsx
+@@ -73,7 +73,8 @@ export default function App() {
+   const secondsLeft = useMemo(() => {
+     if (!session.activeRound || session.activeRound.status !== "voting") return 0;
+ 
+-    const created = new Date(session.activeRound.created_at).getTime();
++    const startedAt = session.activeRound.started_at ?? session.activeRound.created_at;
++    const created = new Date(startedAt).getTime();
+     const elapsed = Math.floor((now - created) / 1000);
+ 
+     return Math.max(0, getRoundTimerSeconds(session.activeRound) - elapsed);
+@@ -223,6 +224,8 @@ export default function App() {
+           soundEnabled={sound.enabled}
+           toggleSound={() => sound.setEnabled(!sound.enabled)}
+           startRound={actions.startRound}
++          beginRound={actions.beginRound}
+           lockVotes={actions.lockVotes}
++          openScoring={actions.openScoring}
+           applyScore={actions.applyScore}
+           completeRound={actions.completeRound}
+diff --git a/src/features/host/HostScreen.tsx b/src/features/host/HostScreen.tsx
+--- a/src/features/host/HostScreen.tsx
++++ b/src/features/host/HostScreen.tsx
+@@ -42,7 +42,9 @@
+   soundEnabled: boolean;
+   toggleSound: () => void;
+   startRound: (type?: RoundType, definition?: RoundDefinition) => Promise<boolean>;
++  beginRound: () => void;
+   lockVotes: () => void;
++  openScoring: () => void;
+   applyScore: (teamId: string, delta: number, reason: string) => void;
+   completeRound: () => void;
+   undoLastScore: () => void;
+@@ -101,10 +103,7 @@
+     !props.activeRound ||
+     props.activeRound.status === "complete" ||
+     props.activeRound.status === "winner";
+-  const isScoringRound =
+-    props.activeRound &&
+-    props.activeRound.status !== "complete" &&
+-    props.activeRound.status !== "winner";
++  const isScoringRound = props.activeRound?.status === "scoring";
+ 
+   return (
+     <motion.main
+@@ -149,7 +148,9 @@
+         activeRound={props.activeRound}
+         showWinner={props.showWinner}
+         startRound={() => props.startRound()}
++        beginRound={props.beginRound}
+         lockVotes={props.lockVotes}
++        openScoring={props.openScoring}
+         completeRound={props.completeRound}
+         revealWinner={props.revealWinner}
+         resetGame={props.resetGame}
+diff --git a/src/features/host/HostCommandPanel.tsx b/src/features/host/HostCommandPanel.tsx
+--- a/src/features/host/HostCommandPanel.tsx
++++ b/src/features/host/HostCommandPanel.tsx
+@@ -1,5 +1,5 @@
+ import { motion } from "framer-motion";
+-import { Check, Play, Settings, Sparkles, TimerReset, Trophy, Users, Vote } from "lucide-react";
++import { Play, Settings, Sparkles, TimerReset, Trophy, Users, Vote } from "lucide-react";
+ import type React from "react";
+ import { roundTypeLabels } from "../../data/gameContent";
+ import {
+@@ -159,12 +159,8 @@
+         {!canStartRound && (
+           <div className="round-blocked-row">
+             <p className="muted-text">
+-              A round is still active. Close it to choose the next round.
++              A round is still active. Use the run-of-show control above to move it forward.
+             </p>
+-            <button className="ghost-btn" onClick={props.completeRound}>
+-              <Check size={18} />
+-              Close current round
+-            </button>
+           </div>
+         )}
+         <TimerControls
+@@ -225,7 +221,9 @@
+           />
+         )}
+ 
+-        {props.activeRound && props.activeRound.status !== "voting" && !isQuizRound && (
++        {props.activeRound &&
++          ["live", "locked", "scoring"].includes(props.activeRound.status) &&
++          !isQuizRound && (
+           <ChallengeRevealCard
+             round={props.activeRound}
+             targetTeam={props.targetTeam}
+@@ -236,6 +234,8 @@
+ 
+       {props.activeRound &&
+         isQuizRound &&
++        props.activeRound.status !== "reveal" &&
++        props.activeRound.status !== "lobby" &&
+         props.activeRound.status !== "complete" &&
+         props.activeRound.status !== "winner" && (
+           <QuizHostPanel
+@@ -254,6 +254,8 @@
+ 
+       {props.activeRound &&
+         !isQuizRound &&
++        props.activeRound.status !== "reveal" &&
++        props.activeRound.status !== "lobby" &&
+         props.activeRound.status !== "complete" &&
+         props.activeRound.status !== "winner" && (
+           <AnswerRacePanel
+diff --git a/src/features/audience/ProjectorStage.tsx b/src/features/audience/ProjectorStage.tsx
+--- a/src/features/audience/ProjectorStage.tsx
++++ b/src/features/audience/ProjectorStage.tsx
+@@ -51,8 +51,9 @@ export function ProjectorStage({
+   }
+ 
+   const voting = activeRound.status === "voting";
++  const revealing = activeRound.status === "reveal" || activeRound.status === "lobby";
+   const teams = voteCounts.map((entry) => entry.team);
+ 
+-  if (isRapidQuizRound(activeRound)) {
++  if (isRapidQuizRound(activeRound) && !revealing) {
+     return (
+       <QuizProjectorPanel
+@@ -87,6 +89,6 @@ export function ProjectorStage({
+           <p className="section-kicker">Round {activeRound.round_number ?? ""}</p>
+           <h2>{activeRound.title}</h2>
+-          <h3>{voting ? activeRound.prompt : activeRound.challenge}</h3>
++          <h3>{voting || revealing ? activeRound.prompt : activeRound.challenge}</h3>
+           {activeRound.twist && <strong>{activeRound.twist}</strong>}
+         </motion.div>
+ 
+@@ -120,5 +122,15 @@ export function ProjectorStage({
+               ))}
+             </div>
+           </div>
++        ) : revealing ? (
++          <motion.div
++            className="challenge-reveal"
++            initial={{ opacity: 0, y: 16 }}
++            animate={{ opacity: 1, y: 0 }}
++          >
++            <Sparkles size={28} />
++            <h3>Round ready</h3>
++            <p className="muted-on-dark">The host will reveal the challenge when the round starts.</p>
++          </motion.div>
+         ) : (
+           <ChallengeRevealCard
+diff --git a/src/features/leader/LeaderScreen.tsx b/src/features/leader/LeaderScreen.tsx
+--- a/src/features/leader/LeaderScreen.tsx
++++ b/src/features/leader/LeaderScreen.tsx
+@@ -39,9 +39,12 @@
+   const answerOpen = Boolean(
+     props.activeRound?.answer_options?.length &&
+       props.activeRound.correct_answer &&
++      props.activeRound.status === "live" &&
+       !isRapidQuizRound(props.activeRound)
+   );
+-  const quizOpen = isRapidQuizRound(props.activeRound);
++  const quizOpen = Boolean(
++    isRapidQuizRound(props.activeRound) && props.activeRound?.status === "live"
++  );
+ 
+   return (
+     <motion.main
+@@ -115,9 +118,17 @@
+           ) : (
+             <div className="challenge-preview">
+               <p className="section-kicker">
+-                {props.activeRound.status === "scoring" ? "Host scoring" : "Task live"}
++                {props.activeRound.status === "reveal" || props.activeRound.status === "lobby"
++                  ? "Round reveal"
++                  : props.activeRound.status === "scoring"
++                  ? "Host scoring"
++                  : "Task live"}
+               </p>
+-              <h3>{props.activeRound.challenge}</h3>
++              <h3>
++                {props.activeRound.status === "reveal" || props.activeRound.status === "lobby"
++                  ? props.activeRound.prompt
++                  : props.activeRound.challenge}
++              </h3>
+               {props.leaderVoteTarget && <p>You voted for {props.leaderVoteTarget.name}.</p>}
+             </div>
+           )}
+@@ -162,6 +173,8 @@
+           ? "Choose your answer"
+           : voteOpen
+           ? round.prompt
++          : round.status === "reveal" || round.status === "lobby"
++          ? round.prompt
+           : round.challenge}
+       </h3>
+       <p>
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -24,6 +24,6 @@ Vote Survive is a live youth-room game show app for team nights. A host runs ro
+ - Create a room from the home screen.
+ - Share the room code and team codes.
+ - Open the game screen or leaderboard on a projector.
+-- Use the run-of-show flow: Lobby, Round Reveal, Voting / Task Live, Locked, Scoring, Leaderboard, Final Reveal.
+-- Use one primary action at a time: start round, lock votes, complete round, start next round, or reveal/reset final results.
++- Use the run-of-show flow: Lobby → Round Reveal → Voting / Task Live → Locked → Scoring → Leaderboard → Final Reveal.
++- Use one primary action at a time: create/reveal the round, start it, lock it, open scoring, complete it, then start the next round or reveal the winner.
+ - Score teams with presets or custom values. Final double rounds automatically double scoring.

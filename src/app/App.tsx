@@ -77,7 +77,8 @@ export default function App() {
   const secondsLeft = useMemo(() => {
     if (!session.activeRound || session.activeRound.status !== "voting") return 0;
 
-    const created = new Date(session.activeRound.created_at).getTime();
+    const startedAt = session.activeRound.started_at ?? session.activeRound.created_at;
+    const created = new Date(startedAt).getTime();
     const elapsed = Math.floor((now - created) / 1000);
 
     return Math.max(0, getRoundTimerSeconds(session.activeRound) - elapsed);
@@ -271,7 +272,9 @@ export default function App() {
           soundEnabled={sound.enabled}
           toggleSound={() => sound.setEnabled(!sound.enabled)}
           startRound={actions.startRound}
+          beginRound={actions.beginRound}
           lockVotes={actions.lockVotes}
+          openScoring={actions.openScoring}
           applyScore={actions.applyScore}
           completeRound={actions.completeRound}
           undoLastScore={actions.undoLastScore}

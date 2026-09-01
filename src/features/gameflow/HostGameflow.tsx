@@ -13,7 +13,9 @@ type HostGameflowProps = {
   activeRound: RoundRecord | null;
   showWinner: boolean;
   startRound: () => void;
+  beginRound: () => void;
   lockVotes: () => void;
+  openScoring: () => void;
   completeRound: () => void;
   revealWinner: () => void;
   resetGame: () => void;
@@ -24,7 +26,9 @@ export function HostGameflow({
   activeRound,
   showWinner,
   startRound,
+  beginRound,
   lockVotes,
+  openScoring,
   completeRound,
   revealWinner,
   resetGame,
@@ -32,20 +36,41 @@ export function HostGameflow({
   const phase = getHostPhase(room, activeRound, showWinner);
   const phaseIndex = hostPhaseOrder.indexOf(phase);
   const primaryLabel =
-    phase === "final_reveal"
+    phase === "voting"
+      ? activeRound?.status === "voting"
+        ? "Lock Votes"
+        : "Lock Task"
+      : phase === "leaderboard" && activeRound?.is_final
+      ? "Reveal Winner"
+      : phase === "final_reveal"
       ? activeRound?.status === "winner" || room.status === "winner"
         ? "Reset"
         : "View Final Results"
       : hostPrimaryActionLabels[phase];
 
   function runPrimaryAction() {
+    if (phase === "round_reveal") {
+      beginRound();
+      return;
+    }
+
     if (phase === "voting") {
       lockVotes();
       return;
     }
 
+    if (phase === "locked") {
+      openScoring();
+      return;
+    }
+
     if (phase === "scoring") {
       completeRound();
+      return;
+    }
+
+    if (phase === "leaderboard" && activeRound?.is_final) {
+      revealWinner();
       return;
     }
 
@@ -55,6 +80,11 @@ export function HostGameflow({
         return;
       }
       revealWinner();
+      return;
+    }
+
+    if (phase === "lobby" || phase === "leaderboard") {
+      startRound();
       return;
     }
 

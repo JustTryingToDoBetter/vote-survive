@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { HOST_SESSION_KEY, normalizeTeam, toRoundRecord } from "../app/appHelpers";
+import { HOST_SESSION_KEY, LEADER_SESSION_KEY, normalizeTeam, toRoundRecord } from "../app/appHelpers";
 import { LIVE_SYNC_INTERVAL_MS, REALTIME_DEBOUNCE_MS } from "../lib/sessionConfig";
 import { supabase } from "../lib/supabase";
 import {
   fetchAnswers,
   fetchRoom,
   fetchRoomByCode,
+  fetchTeamByLeaderCode,
   fetchRounds,
   fetchScores,
   fetchTeams,
@@ -273,7 +274,49 @@ export function useRoomSession({
       return;
     }
 
-    if (initialPath === "leader") return;
+    if (initialPath === "leader") {
+      const storedLeader = window.localStorage.getItem(LEADER_SESSION_KEY);
+      if (!storedLeader) return;
+
+      try {
+        const parsed = JSON.parse(storedLeader) as {
+          roomCode?: string;
+          teamCode?: string;
+        };
+        const storedRoomCode = parsed.roomCode?.trim().toUpperCase() ?? "";
+        const storedTeamCode = parsed.teamCode?.trim().toUpperCase() ?? "";
+
+        if (!storedRoomCode || !storedTeamCode) {
+          window.localStorage.removeItem(LEADER_SESSION_KEY);
+          return;
+        }
+
+        if (initialRoomCode && storedRoomCode !== initialRoomCode) return;
+
+        window.setTimeout(() => {
+          void (async () => {
+            try {
+              setIsLoading(true);
+              const foundRoom = await fetchRoomByCode(storedRoomCode);
+              const foundTeam = await fetchTeamByLeaderCode(foundRoom.id, storedTeamCode);
+              setRoom(foundRoom);
+              setRoomCodeInput(foundRoom.code);
+              setTeamCodeInput(storedTeamCode);
+              setLeaderTeam(foundTeam);
+              setMode("leader");
+              await refreshRoomData(foundRoom.id);
+            } catch {
+              window.localStorage.removeItem(LEADER_SESSION_KEY);
+            } finally {
+              setIsLoading(false);
+            }
+          })();
+        }, 0);
+      } catch {
+        window.localStorage.removeItem(LEADER_SESSION_KEY);
+      }
+      return;
+    }
 
     const stored = window.localStorage.getItem(HOST_SESSION_KEY);
     if (!stored) return;
@@ -286,7 +329,7 @@ export function useRoomSession({
     } catch {
       window.localStorage.removeItem(HOST_SESSION_KEY);
     }
-  }, [initialPath, initialRoomCode, loadRoomByCode]);
+  }, [initialPath, initialRoomCode, loadRoomByCode, refreshRoomData, setMode]);
 
   useEffect(() => {
     if (!room?.id) return;
@@ -323,11 +366,11 @@ export function useRoomSession({
           const round = toRoundRecord(payload.new as Record<string, unknown>);
           setRounds((current) => sortRounds(upsertById(current, round)));
           setActiveRound((current) => {
-            if (current?.id === round.id) {
-              return round.status === "complete" ? null : round;
-            }
-            if (round.status !== "complete") return round;
-            return current;
+            if (!current || current.id === round.id) return round;
+
+            const currentCreatedAt = new Date(current.created_at).getTime();
+            const nextCreatedAt = new Date(round.created_at).getTime();
+            return nextCreatedAt >= currentCreatedAt ? round : current;
           });
         }
       )
