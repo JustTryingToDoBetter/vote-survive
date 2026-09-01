@@ -1,8 +1,6 @@
 import { motion } from "framer-motion";
-import { Play, Sparkles, Trophy, Vote } from "lucide-react";
+import { Play, QrCode, Sparkles, Trophy, Vote } from "lucide-react";
 import type React from "react";
-import { DEFAULT_TEAMS } from "../../data/teamPresets";
-import { TeamAvatar } from "../shared/TeamAvatar";
 
 type HomeScreenProps = {
   isLoading: boolean;
@@ -54,40 +52,36 @@ export function HomeScreen(props: HomeScreenProps) {
           <h2>Join from your phone</h2>
           <p>Scan the QR from the host or enter your room and team code.</p>
 
-          <div className="join-team-preview-grid">
-            {DEFAULT_TEAMS.map((team) => (
-              <div
-                className="join-team-preview"
-                key={team.name}
-                style={{ "--team-color": team.color } as React.CSSProperties}
-              >
-                <TeamAvatar emoji={team.avatarEmoji} image={team.avatarImage} name={team.name} />
-                <div>
-                  <strong>{team.name}</strong>
-                  <span>{team.animal}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
           <div className="join-form">
-            <input
-              placeholder="Room code"
-              value={props.roomCodeInput}
-              onChange={(event) =>
-                props.setRoomCodeInput(event.target.value.toUpperCase())
-              }
-            />
-            <input
-              placeholder="Team code"
-              value={props.teamCodeInput}
-              onChange={(event) =>
-                props.setTeamCodeInput(event.target.value.toUpperCase())
-              }
-            />
-            <button onClick={props.joinAsLeader} disabled={props.isLoading}>
-              {props.isLoading ? "Joining..." : "Join team"}
-            </button>
+            <label>
+              <span>Room code</span>
+              <input
+                placeholder="G6PYF"
+                value={props.roomCodeInput}
+                onChange={(event) =>
+                  props.setRoomCodeInput(event.target.value.toUpperCase())
+                }
+              />
+            </label>
+            <label>
+              <span>Team code</span>
+              <input
+                placeholder="L"
+                value={props.teamCodeInput}
+                onChange={(event) =>
+                  props.setTeamCodeInput(event.target.value.toUpperCase())
+                }
+              />
+            </label>
+            <div className="join-actions-row">
+              <button onClick={props.joinAsLeader} disabled={props.isLoading}>
+                {props.isLoading ? "Joining..." : "Join Team"}
+              </button>
+              <button className="secondary-btn" type="button" aria-label="Scan QR code">
+                <QrCode size={18} />
+                Scan QR
+              </button>
+            </div>
           </div>
 
           {props.loadError && <p className="error-banner">{props.loadError}</p>}

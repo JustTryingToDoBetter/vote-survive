@@ -1,6 +1,5 @@
 import { motion } from "framer-motion";
-import { Play, Settings, Sparkles, TimerReset, Trophy, Users, Vote } from "lucide-react";
-import type React from "react";
+import { Play, Sparkles, TimerReset, Trophy, Vote } from "lucide-react";
 import { roundTypeLabels } from "../../data/gameContent";
 import {
   formatSyncState,
@@ -74,9 +73,6 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
   const votingTeams = Math.max(0, props.teams.length);
   const voteProgress =
     votingTeams > 0 ? Math.round((props.totalVotes / votingTeams) * 100) : 0;
-  const roundStatusLabel = props.activeRound
-    ? `${roundTypeLabels[props.activeRound.round_type]} - ${props.activeRound.status}`
-    : "Live room - choose a round";
   const canStartRound =
     !props.activeRound ||
     props.activeRound.status === "complete" ||
@@ -111,11 +107,10 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
 
   return (
     <section className="host-panel host-run-game">
-      <div className="dashboard-grid">
-        <StatusStrip label="Round status" value={roundStatusLabel} icon={<Settings size={18} />} />
-        <StatusStrip label="Joined teams" value={`${joinedTeams}/${props.teams.length} joined`} icon={<Users size={18} />} />
-        <StatusStrip label="Voting progress" value={`${voteProgress}%`} icon={<Vote size={18} />} />
-        <StatusStrip label="Sync" value={formatSyncState(props.syncState)} icon={<TimerReset size={18} />} />
+      <div className="status-strip-inline">
+        <StatusPill label="Joined" value={`${joinedTeams}/${props.teams.length}`} />
+        <StatusPill label="Voting" value={`${voteProgress}%`} />
+        <StatusPill label="Sync" value={formatSyncState(props.syncState)} />
       </div>
 
       <HostShowModePanel
@@ -325,13 +320,11 @@ function VoteStatusPanel(props: {
   );
 }
 
-function StatusStrip(props: { label: string; value: string; icon: React.ReactNode }) {
+function StatusPill(props: { label: string; value: string }) {
   return (
-    <div className="status-strip">
-      <div className="status-strip-icon">{props.icon}</div>
-      <span>{props.label}</span>
-      <strong>{props.value}</strong>
-    </div>
+    <span className="status-pill">
+      <small>{props.label}:</small> {props.value}
+    </span>
   );
 }
 

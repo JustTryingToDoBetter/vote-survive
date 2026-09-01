@@ -5,141 +5,18 @@ import type {
   RoundType,
 } from "../lib/types";
 
-// ---------------------------------------------------------------------------
-// VOTING PROMPTS
-// ---------------------------------------------------------------------------
-
-const votingPrompts = [
-  "Which team should be thrown into a 1v1 showdown tonight?",
-  "Which team would crack first in a head-to-head pressure battle?",
-  "Which team talks big but might wobble in a direct face-off?",
-  "Which team should step into the pressure duel right now?",
-  "Which team has been too quiet — time to put them in the spotlight?",
-  "Which team looks like they need a little pressure to wake up?",
-  "Which team has been saving their energy for this exact moment?",
-  "Which team do you want to see fight for their life tonight?",
-  "Which team do you trust to represent under pressure?",
-  "Which team has been coasting and needs to earn their points?",
-  "Which team's leader has that look like they're ready to go?",
-  "Which team has the most to prove right now?",
-  "Who do you send into battle when everything is on the line?",
-  "Which team would you least want to face in a 1v1 — vote them in!",
-  "Which team has been the loudest? Time to back it up.",
-  "Which team has been moving like main characters all night?",
-  "Which team looks way too comfortable right now?",
-  "Which team should prove their confidence was not just volume?",
-  "Which team has the biggest comeback energy?",
-  "Which team would survive a surprise challenge with absolutely no prep?",
-  "Which team needs a loving public wake-up call?",
-  "Which team has been quietly plotting and needs to be exposed?",
-  "Which team should take the next big swing?",
-  "Which team is one challenge away from either glory or chaos?",
-  "Which team leader has been acting like they are built different?",
-  "Which team deserves the pressure because they can actually handle it?",
-  "Which team would make the funniest highlight reel under pressure?",
-  "Which team has been too safe and needs to risk something?",
-  "Which team should defend their honour right now?",
-  "Which team is ready for a youth-night legend moment?",
-];
-
-const votingChallenges = [
-  "The most-voted team enters a 1v1 showdown against a rival picked by the host.",
-  "The most-voted team faces the current leaderboard leader in a pressure duel.",
-  "The most-voted team must nominate one rival and beat them in a fast challenge.",
-  "The most-voted team gets 30 seconds to defend themselves before the host calls the matchup.",
-  "The most-voted team plays a sudden-death round. Winner earns points, loser takes a penalty.",
-  "The most-voted team steps into the spotlight and the host chooses their exact task live.",
-];
-
-const allPlayPrompts = [
-  "This round runs across the whole room.",
-  "Everyone is active. No hiding this round.",
-  "All teams play at the same time.",
-  "Full-room chaos. Host judges the cleanest execution.",
-];
-
-const quizBurstPrompts = [
-  "Two teams enter. One answer swings it.",
-  "Fastest correct answer takes control.",
-  "Hands up, brains on, no hesitation.",
-  "One question can flip the scoreboard.",
-];
-
-const bibleSpeedPrompts = [
-  "Find it. Shout it. Beat the team across from you.",
-  "Fast hands win this one.",
-  "Open the Bible and move quickly.",
-  "The first clean read gets the edge.",
-];
-
-const danceBattlePrompts = [
-  "Energy check. Pick your showdown.",
-  "The room decides who brought the fire.",
-  "Confidence, creativity, and timing matter.",
-  "Send your boldest mover forward.",
-];
-
-const finalChallenges = [
-  "Run one last dramatic set of 1v1 or 2v2 showdowns with doubled scoring. Make it count.",
-  "Every team gets one final moment. Host scores big swings only.",
-  "The top two teams face off, then the rest fight for placement points.",
-  "One final all-play challenge decides the scoreboard. Scores are doubled.",
-  "Captains step forward for a final pressure test. Every score action counts double.",
-  "Final Pack: Captain Gauntlet. Each leader faces one speed question, one acting prompt, and one courage challenge. Score every moment double.",
-  "Final Pack: Redemption Relay. Last place chooses the first matchup, winners keep advancing, and every score action counts double.",
-  "Final Pack: Crowd Court. Teams perform a 20-second defence speech, then complete one host-picked challenge. Host scores confidence and execution double.",
-  "Final Pack: Bible Boss Rush. Run five rapid Bible questions, then one final sudden-death question for the top two teams. Double every award.",
-  "Final Pack: Team Legacy. Each team gets 30 seconds to create a chant, a pose, and a one-line testimony-style hype moment. Score big swings double.",
-  "Final Pack: Chaos Ladder. Start with the lowest score team challenging anyone above them. A win lets them climb and score double.",
-  "Final Pack: The Last Stand. Top team must defend their lead in a 1v1, while trailing teams fight for one final double-points steal.",
-];
-
-// ---------------------------------------------------------------------------
-// TWISTS
-// ---------------------------------------------------------------------------
-
-const twists = [
-  "Twist: Crowd bonus. The loudest support gets +2.",
-  "Twist: Mercy minute. The pressure team may swap one rival.",
-  "Twist: Fast hands. Bonus points if answered in 10 seconds.",
-  "Twist: Steady nerves. Any hesitation costs 1 point.",
-  "Twist: Double or nothing. The pressure team can wager 5 of their points.",
-  "Twist: Tag in. Mid-round, the leader can swap themselves for any teammate.",
-  "Twist: Steal window. If the losing team answers after the winner, they snatch 3 points.",
-  "Twist: Crowd vote. The audience votes thumbs up/down after the performance — host adds up to +3.",
-  "Twist: Silent start. First 5 seconds must be performed in complete silence.",
-  "Twist: Rematch clause. Losing team can immediately call a rematch — one time only.",
-  "Twist: Mystery judge. Host picks one random person from the room to be the deciding judge.",
-  "Twist: Momentum swing. If the trailing team wins, they earn double the normal points.",
-  "Twist: Confidence tax. Before the round, each team secretly bids 1–5 points. Loser pays it out.",
-  "Twist: Captain only. Only the team leader may perform or answer for this round.",
-  "Twist: Lightning finish. Last 10 seconds only — whoever scores in that window gets +3.",
-];
 
 // ---------------------------------------------------------------------------
 // ALL-PLAY CHALLENGES
 // ---------------------------------------------------------------------------
 
 const allPlayChallenges = [
-  // Physical / Energy
-  "Split the room into 2v2 lanes. Each pair has 25 seconds to invent a chant from their team animal.",
   "Run back-to-back 2v2 freeze battles. Each duo builds a Bible scene using only body poses.",
-  "Create two 2v2 matchups. Each pair has 30 seconds to make a slogan and deliver it loud.",
   "All teams at the same time: 30 seconds to come up with a team handshake and perform it perfectly.",
   "Each team has 45 seconds to build a human sculpture that represents one of the Fruits of the Spirit.",
-  "2v2 charades: Act out a Bible miracle without speaking. Rival team has 20 seconds to guess.",
   "Every team performs a 15-second hype intro for themselves — crowd energy judged by the host.",
-  "One person from each team mimes a Bible character. Their team shouts guesses. First to 3 correct wins.",
-
-  // Creative / Speaking
   "Each team has 30 seconds to write and deliver a one-line rap about their team animal.",
-  "Teams compete to create the best 20-second motivational speech using only three words: Faith, Fire, and Fight.",
-  "2v2 debate battle: Teams argue opposite sides of 'Is it harder to be Daniel or Joseph?' — 30 seconds each side.",
-  "Each team rewrites a well-known worship song chorus using their team name. 45 seconds. Perform it.",
-  "Speed storytelling: Each team member says one sentence to continue a story about David and Goliath. Must make sense.",
-  "Pair off into 2v2s. Each pair has 20 seconds to come up with the best Bible-inspired team motto.",
-
-  // Knowledge / Speed
+  "Teams compete to create the best 30-second motivational speech using only three words: Coffee, Gym, and Jesus",
   "All teams race to name as many books of the Bible as possible in 30 seconds. Host counts, top total wins.",
   "4-team simultaneous quiz: Host reads a question, first team to stand wins the point. 5 questions, fast fire.",
   "Name chain: Teams take turns — each team must name a Bible character whose name starts with the last letter of the previous answer.",
@@ -152,10 +29,68 @@ const allPlayChallenges = [
   "Choir chaos: teams have 20 seconds to turn their team name into a worship-conference-style chant.",
   "Reverse charades: the whole team acts while the leader guesses the Bible character.",
   "Emoji testimony: teams describe a Bible story using only faces, gestures, and dramatic pointing.",
-  "Awkward handshake altar call: invent the most complicated team handshake that still looks clean.",
   "Speed compliment battle: teams have 20 seconds to hype another team without repeating any adjective.",
   "Lost announcement challenge: each team announces a missing sandal like it is the most important news of the night.",
   "One-word sermon relay: each person adds exactly one word to build a dramatic sentence about courage.",
+];
+
+const votingPrompts = [
+  "Let the room pick the pressure team.",
+  "Choose the team that has to make the big call.",
+  "Who is walking into the spotlight tonight?",
+  "The vote decides who faces the pressure.",
+  "Pick the target team before the challenge is revealed.",
+  "The room decides which team takes the risk.",
+  "Vote for the pressure matchup.",
+  "Name the team under the spotlight.",
+];
+
+const votingChallenges = [
+  "Every team nominates one leader to defend their side in the final vote.",
+  "The pressure team must answer a Bible question before the timer ends.",
+  "The target team picks the challenge category and the room votes the winner.",
+  "The vote decides who faces the one-on-one pressure round tonight.",
+  "The team with the loudest room energy earns the challenge spotlight.",
+  "The pressure team gets one final chance to claim the room's attention.",
+];
+
+const allPlayPrompts = [
+  "Everyone joins in on the same challenge at once.",
+  "This is full-room chaos with no voting required.",
+  "All teams hit the challenge together and stack up their score.",
+  "Every team is in the spotlight, all at once.",
+  "The room explodes into one shared challenge moment.",
+];
+
+const quizBurstPrompts = [
+  "Fast facts. Fast reactions. Quick points.",
+  "The room moves in a blitz of Bible knowledge.",
+  "Answer fast, lock early, and hold your nerve.",
+  "Quiz burst: speed wins the room.",
+  "A lightning round of Bible knowledge is under way.",
+];
+
+const bibleSpeedPrompts = [
+  "Find the verse quickly, then answer with confidence.",
+  "The room is racing through Bible references now.",
+  "Quick recall wins this speed sprint.",
+  "Every team is chasing the right reference in real time.",
+  "Bible speed: find it first and finish strong.",
+];
+
+const twists = [
+  "The host can double the points if the room is loud enough.",
+  "Flip the challenge categories at the last second.",
+  "The pressure team picks the rule twist before the round starts.",
+  "This round gets a surprise twist from the host bench.",
+  "A bonus rule changes the whole feel of the final moment.",
+];
+
+const finalChallenges = [
+  "Final countdown: every score is doubled and the room is watching every move.",
+  "This is the biggest moment of the night — no safe plays, only bold choices.",
+  "The final challenge decides the winner in one unforgettable push.",
+  "One last showdown turns the entire room into a live final.",
 ];
 
 // ---------------------------------------------------------------------------
@@ -495,46 +430,84 @@ export const legacyBibleSpeedChallenges = [
   "Race: Find and read Micah 6:8 first.",
 ];
 
-// ---------------------------------------------------------------------------
-// DANCE BATTLE FORMATS
-// ---------------------------------------------------------------------------
 
-const danceBattleChallenges = [
-  "Run a 1v1 captain battle or a 2v2 crew showdown when the music drops.",
-  "Each team sends one person. 15 seconds each. Crowd energy decides the winner.",
-  "2v2 crew battle: 20 seconds per team, judged on creativity, energy, and sync.",
-  "Freeze battle: Music stops randomly — last person still frozen when it restarts is out.",
-  "Mirror battle: Two people face off. One leads, one mirrors. Host switches leader mid-battle.",
-  "Slow-mo battle: Entire performance must be in exaggerated slow motion. Creativity wins.",
-  "Style swap: Each team picks a ridiculous style (ballet, robot, grandpa) for the opponent to battle in.",
-  "Team sync challenge: All members of each team must move in perfect unison for 15 seconds.",
-  "Chair-free musical statues: music stops, everyone freezes in a Bible-character pose. Host eliminates the wobblers.",
-  "Worship intro remix: teams create a 10-second walk-on move like they are entering a youth camp stage.",
-  "Bible scene dance-off: one team dances 'walls of Jericho', the other dances 'storm on the boat'. Host judges clarity and courage.",
-  "Invisible prop battle: each team must dance with an imaginary object chosen by the host.",
-];
 
 // ---------------------------------------------------------------------------
 // STEAL ROUND PROMPTS
 // ---------------------------------------------------------------------------
 
 const stealChallenges = [
-  "The pressure team faces a rival in a 1v1 duel. If they win, they steal momentum and maybe extra points.",
-  "Pressure team picks their rival. Win the duel and steal 5 points directly off the rival's score.",
-  "The team with the most votes faces the current leaderboard leader in a steal attempt.",
-  "If the pressure team wins, they steal 3 points from every other team simultaneously.",
-  "Pressure team vs. host's pick. Winner takes 7 points. Loser gives up 3.",
-  "Last-place team is the pressure team — this is their comeback duel. Steal window is wide open.",
-  "Steal Sprint: trailing team calls out any team above them. One Bible speed question decides a 6-point steal.",
-  "Receipt Check: the pressure team gets 20 seconds to explain why they deserve another team's points, then must win a quick challenge to take them.",
-  "Double Dare Steal: pressure team can attempt an easy task for +3 or a harder task for +8 from one rival.",
-  "Captain Snatch: leaders face a sudden-death quiz. Winner steals 5 from the loser.",
-  "Crowd Noise Steal: teams perform a 10-second hype chant. Host picks winner; winner steals 4 from any team.",
-  "Reverse Steal: the targeted rival can block the steal by answering first. If they miss, the pressure team takes 7.",
-  "Mercy Steal: last-place team gets one clean shot to steal 5 from first place. No penalty if they lose.",
-  "Risky Receipt: team may steal 10, but if they fail the challenge they give 5 to the target.",
-  "Tag-Team Theft: pressure team chooses one teammate and one rival teammate for a 2v2 mini challenge. Winner steals 6.",
-  "Bible Backup Steal: answer the first question for +3, then choose to stop or risk it for a 7-point steal.",
+  "KINGSLAYER: The pressure team challenges the team in 1st place. Win one sudden-death challenge and steal 8 points. Lose and the leaders steal 3 from you.",
+
+  "THE HEIST: Pick any rival team and announce how many points you want to steal: 3, 5, or 8. The higher the steal, the harder the host makes the challenge. Fail and you pay half the attempted steal.",
+
+  "ALL OR NOTHING: Challenge any team above you for 10 points. Winner takes the full 10. There is no runner-up reward.",
+
+  "ROBBIN' HOOD: Last place challenges first place. If last place wins, they steal 4 points from first place AND receive 2 points from every other team.",
+
+  "BOUNTY HUNTER: The host secretly places a 7-point bounty on one team. The pressure team chooses an opponent before the bounty is revealed. Pick the bounty team and win? Steal 10 instead.",
+
+  "POINTS AUCTION: The pressure team secretly wagers 1–8 points. Their opponent does the same. Reveal both wagers. Winner steals the combined wager from the loser.",
+
+  "CAPTAIN'S RANSOM: Captains face each other in sudden death. Winner may steal 6 points OR force the losing captain to sit out the next challenge.",
+
+  "DOUBLE OR DISASTER: Attempt the challenge for a 5-point steal. After winning, choose: keep the 5 or immediately risk it in a second challenge for a 12-point steal. Lose the second challenge and return everything.",
+
+  "THE VAULT: Three mini-challenges stand between the pressure team and 12 stolen points. Clear Challenge 1 for 3, Challenge 2 for another 4, Challenge 3 for another 5. They may cash out after any win.",
+
+  "HIGHWAY ROBBERY: The pressure team gets 30 seconds to beat THREE other teams in rapid-fire Bible questions. Every team they beat loses 3 points to them.",
+
+  "REVENGE RECEIPT: Challenge the team that most recently beat you. Winning steals 7 points. If you lost points to them earlier tonight, steal an extra 2.",
+
+  "THE SETUP: The pressure team chooses two rival teams to battle each other. Before they start, predict the winner. Correct prediction steals 4 points from BOTH teams. Wrong prediction costs 3.",
+
+  "HOSTAGE POINTS: Choose a rival and lock 8 of their points. They must win the next challenge to keep them. If they lose, the pressure team takes all 8.",
+
+  "SNAKE EYES: Roll or randomly generate a number from 1–6. That number becomes the steal value. Roll a 6 and the steal doubles to 12 — but failure costs 6.",
+
+  "THE TRAITOR: The pressure team chooses one player from a rival team to represent BOTH teams in a challenge. If that player succeeds, their original team keeps 5 points. If they fail, the pressure team steals 5.",
+
+  "LAST TEAM STANDING: Every team sends one player into a rapid elimination challenge. Each elimination transfers 2 points from the eliminated player's team to whoever knocked them out. Last survivor gets an extra 5.",
+
+  "CHAIN ROBBERY: Challenge any team for 4 points. Win and choose another team immediately for a second 4-point steal. Keep winning and keep going. One loss ends the chain.",
+
+  "THE UNTOUCHABLES: The current leader must defend against every other team in rapid succession. Each challenger who beats them steals 3 points. If the leader survives everyone, they gain 6.",
+
+  "SWITCHEROO: Beat a rival in a challenge and choose between stealing 7 points OR swapping your entire score with theirs. The choice must be made BEFORE the challenge begins.",
+
+  "MYSTERY BOX: The pressure team chooses Box A, B, or C before the challenge. Hidden rewards are +3, +7, and +12 steal points. The host reveals their box only AFTER they accept the challenge.",
+
+  "BANK BREAKER: Pick the richest team on the scoreboard. Beat them and steal 20% of their current score, rounded to the nearest whole point. Lose and give them 5.",
+
+  "EVERYBODY'S AN OP: The pressure team plays against the entire room. One challenge. If they win, steal 2 points from EVERY team. If anyone beats them, that team steals 5 from the pressure team.",
+
+  "THE GETAWAY: Win a challenge to steal 5. Then survive a 10-second bonus challenge to escape with the points. Fail the getaway and the victim gets their 5 back.",
+
+  "BACKSTAB: Two teams secretly choose another team to steal from. If both target the same team, they must battle each other first. Winner gets exclusive rights to attempt the 8-point steal.",
+
+  "THE DEBT COLLECTOR: The lowest-scoring team selects one rival. Every correct answer in a 30-second quiz transfers 2 points from that rival. No maximum until time expires.",
+
+  "BIBLE BOSS FIGHT: Challenge first place to a best-of-3 Bible showdown. Each question is worth 3 stolen points. Win all three and receive a 5-point sweep bonus.",
+
+  "THE GAUNTLET: The pressure team names three opponents. They face them one after another. First win steals 3, second steals 5, third steals 8. Lose once and the run ends.",
+
+  "PROTECT THE KING: First place chooses another team as their protector. The pressure team must beat the protector before they can challenge first place for an 8-point steal. Beat both and earn a 4-point bonus.",
+
+  "UNO REVERSE: The pressure team attempts a 7-point steal. Before the challenge starts, the targeted team may yell 'REVERSE' and turn the challenge back on them. The original pressure team cannot refuse.",
+
+  "THE COUP: Every team except first place participates. If ANY challenger beats first place, first place loses 3 points to every team that defeated them. If first place beats everyone, they gain 8.",
+
+  "SUDDEN DEATH JACKPOT: Start at a 2-point steal. Every correct answer doubles the pot: 2 → 4 → 8 → 16. Stop whenever you want. One wrong answer loses the entire pot and gives the opponent 4.",
+
+  "WANTED: The host announces one challenge and every team secretly writes down how many points they would risk to enter. Highest bidder gets the challenge. Win and steal the bid from any team. Lose and pay the bid to last place.",
+
+  "THE GREAT ESCAPE: The pressure team steals 8 points immediately — but the victim gets one challenge to chase them down. If the victim wins, they recover the 8 and steal 4 extra.",
+
+  "DOMINO EFFECT: Steal 5 from one team. That team then gets an immediate chance to steal 5 from someone else. Continue until somebody loses a challenge or every team has played.",
+
+  "PICKPOCKET: Before seeing the challenge, choose one rival and secretly choose 3, 6, or 9 points. Complete the challenge and take them. Fail and the target takes the same amount from you.",
+
+  "FINAL BOSS: The lowest-ranked team challenges the current leader. The trailing team chooses the challenge category. The leader chooses who represents each team. Winner steals 10.",
 ];
 
 // ---------------------------------------------------------------------------
@@ -683,13 +656,13 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
     case "dance_battle":
       return {
         type,
-        title: "Dance Battle Bracket",
-        prompt: pickRandom(danceBattlePrompts),
-        challenge: pickRandom(danceBattleChallenges),
+        title: "Dance Battle",
+        prompt: "Bring the room energy and turn the floor into a showpiece.",
+        challenge: "Two teams hit the floor with a 30-second dance showdown judged on energy, timing, and confidence.",
         instructions:
-          "No voting needed. Let the host call the bracket and score confidence, creativity, and crowd energy.",
+          "Pick two teams, give them a rhythm cue, and let the crowd vote for who owned the moment.",
         scoringGuide:
-          "Winning act gets top points, losing act gets runner-up or effort points, and crowd favourites can earn a bonus.",
+          "The winner takes the full win points. Runner-up gets a smaller bonus for the energy and creativity shown.",
         requiresVoting: false,
       };
 
@@ -703,7 +676,6 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
           "Use voting first to pick the pressure team, then match them against one rival for the steal attempt.",
         scoringGuide:
           "Award normal winner and runner-up points, then use a custom score if you want to add the steal bonus.",
-        twist: pickRandom(twists),
         requiresVoting: true,
       };
 
@@ -720,6 +692,20 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
         twist: pickRandom(twists),
         requiresVoting: false,
         isFinal: true,
+      };
+
+    default:
+      return {
+        type: "voting",
+        title: "Pressure Duel Vote",
+        prompt: pickRandom(votingPrompts),
+        challenge: pickRandom(votingChallenges),
+        instructions:
+          "Leaders vote from their phones. Once locked, reveal the pressure team and match them into a direct duel.",
+        scoringGuide:
+          "Use winner and runner-up scoring for the duel, then give participation or bonus points to the rest.",
+        twist: pickRandom(twists),
+        requiresVoting: true,
       };
   }
 }
