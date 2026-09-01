@@ -51,7 +51,25 @@ import type {
 type SoundEffects = {
   play: (name: SoundName) => void;
 };
+function getErrorMessage(
+  error: unknown,
+  fallback: string
+) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message?: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
 
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return fallback;
+}
 function votesForLeader(votes: VoteRow[], leaderTeamId: string) {
   return votes.find((vote) => vote.voter_team_id === leaderTeamId) ?? null;
 }
@@ -271,8 +289,15 @@ export function useGameActions({
         window.history.replaceState({}, "", url.toString());
       }
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Unable to join room.");
-    } finally {
+  console.error("Leader join failed:", error);
+
+  setLoadError(
+    getErrorMessage(
+      error,
+      "Unable to join room."
+    )
+  );
+} finally {
       setIsLoading(false);
     }
   }
