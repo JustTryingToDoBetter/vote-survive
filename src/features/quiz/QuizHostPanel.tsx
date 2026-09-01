@@ -1,6 +1,7 @@
-import { Check, FastForward, Lock, Play, Trophy } from "lucide-react";
+import { Check, Eye, FastForward, Lock, Play, TimerReset, Trophy } from "lucide-react";
 import type { AnswerSubmission, RoundRecord, Team } from "../../lib/types";
 import {
+  formatQuizCategory,
   getCurrentQuestion,
   getCurrentQuestionAnswers,
   getCurrentQuestionIndex,
@@ -12,12 +13,13 @@ type QuizHostPanelProps = {
   round: RoundRecord;
   teams: Team[];
   submissions: AnswerSubmission[];
+  secondsLeft: number;
   startQuestion: () => void;
   lockQuestion: () => void;
+  revealAnswer: () => void;
   nextQuestion: () => void;
   endQuizRound: () => void;
-  awardFastestCorrect: () => void;
-  awardAllCorrect: () => void;
+  awardQuestionScores: () => void;
   pendingQuizAction: string | null;
 };
 
@@ -30,9 +32,8 @@ export function QuizHostPanel(props: QuizHostPanelProps) {
   const answeredTeamIds = new Set(answers.map((answer) => answer.team_id));
   const waitingTeams = props.teams.filter((team) => !answeredTeamIds.has(team.id));
   const status = props.round.question_status ?? "waiting";
-  const scoringFastest = props.pendingQuizAction === "score-fastest";
-  const scoringCorrect = props.pendingQuizAction === "score-correct";
-  const scoringPending = scoringFastest || scoringCorrect;
+  const scoringPending = props.pendingQuizAction === "score-results";
+  const revealed = status === "revealed" || status === "scored";
 
   if (!question) return null;
 
@@ -45,12 +46,22 @@ export function QuizHostPanel(props: QuizHostPanelProps) {
           </p>
           <h2>{question.prompt}</h2>
           <p className="muted-text">Status: {status}</p>
+          <p className="muted-text">
+            {formatQuizCategory(question.category)} · {question.difficulty ?? "medium"} ·{" "}
+            {question.timeLimitSeconds}s
+          </p>
+          {status === "live" && (
+            <div className="round-mini-stat">
+              <TimerReset size={16} />
+              {props.secondsLeft}s left
+            </div>
+          )}
         </div>
         <div className="quiz-command-row">
           <button
             className="primary-btn"
             onClick={props.startQuestion}
-            disabled={status === "live"}
+            disabled={status !== "waiting"}
           >
             <Play size={18} />
             Start Question
@@ -65,13 +76,25 @@ export function QuizHostPanel(props: QuizHostPanelProps) {
           </button>
           <button
             className="ghost-btn"
+            onClick={props.revealAnswer}
+            disabled={status !== "locked"}
+          >
+            <Eye size={18} />
+            Reveal Answer
+          </button>
+          <button
+            className="ghost-btn"
             onClick={props.nextQuestion}
-            disabled={!isLastQuizQuestion(props.round) ? status === "live" : true}
+            disabled={status !== "scored" || isLastQuizQuestion(props.round)}
           >
             <FastForward size={18} />
             Next Question
           </button>
-          <button className="ghost-btn" onClick={props.endQuizRound}>
+          <button
+            className="ghost-btn"
+            onClick={props.endQuizRound}
+            disabled={status !== "scored"}
+          >
             <Check size={18} />
             End Quiz
           </button>
@@ -86,9 +109,11 @@ export function QuizHostPanel(props: QuizHostPanelProps) {
         <div className="status-strip">
           <span>Fastest correct</span>
           <strong>
-            {fastestCorrect
+            {revealed && fastestCorrect
               ? props.teams.find((team) => team.id === fastestCorrect.team_id)?.name ?? "Team"
-              : "None yet"}
+              : revealed
+              ? "None"
+              : "Hidden"}
           </strong>
         </div>
         <div className="status-strip">
@@ -97,22 +122,19 @@ export function QuizHostPanel(props: QuizHostPanelProps) {
         </div>
       </div>
 
-      {status === "locked" && (
+      {status === "revealed" && (
         <div className="quiz-command-row">
           <button
             className="primary-btn"
-            onClick={props.awardFastestCorrect}
-            disabled={!fastestCorrect || scoringPending}
+            onClick={props.awardQuestionScores}
+            disabled={scoringPending}
           >
             <Trophy size={18} />
-            {scoringFastest ? "Awarding fastest..." : "Award fastest +10"}
-          </button>
-          <button
-            className="ghost-btn"
-            onClick={props.awardAllCorrect}
-            disabled={correctAnswers.length === 0 || scoringPending}
-          >
-            {scoringCorrect ? "Awarding correct..." : "Award all correct +5"}
+            {scoringPending
+              ? "Awarding results..."
+              : correctAnswers.length === 0
+              ? "Record result: no correct answers"
+              : "Award results: fastest +10, other correct +5"}
           </button>
         </div>
       )}
@@ -128,8 +150,16 @@ export function QuizHostPanel(props: QuizHostPanelProps) {
             >
               <span>#{index + 1}</span>
               <strong>{team?.name ?? "Team"}</strong>
-              <b>{status === "locked" ? submission.answer : "Answered"}</b>
-              <em>{status === "locked" ? (submission.is_correct ? "Correct" : "Wrong") : "Hidden"}</em>
+              <b>{status === "locked" || revealed ? submission.answer : "Answered"}</b>
+              <em>
+                {revealed
+                  ? submission.is_correct
+                    ? "Correct"
+                    : "Wrong"
+                  : status === "locked"
+                  ? "Locked"
+                  : "Hidden"}
+              </em>
             </div>
           );
         })}

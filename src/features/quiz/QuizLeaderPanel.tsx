@@ -1,9 +1,15 @@
 import { motion } from "framer-motion";
+import { TimerReset } from "lucide-react";
 import type { AnswerSubmission, RoundRecord } from "../../lib/types";
-import { getCurrentQuestion, getCurrentQuestionIndex } from "./quizEngine";
+import {
+  formatQuizCategory,
+  getCurrentQuestion,
+  getCurrentQuestionIndex,
+} from "./quizEngine";
 
 type QuizLeaderPanelProps = {
   round: RoundRecord;
+  secondsLeft: number;
   leaderAnswer: AnswerSubmission | null;
   pendingAnswerKey: string | null;
   submitAnswer: (answer: string) => void;
@@ -11,6 +17,7 @@ type QuizLeaderPanelProps = {
 
 export function QuizLeaderPanel({
   round,
+  secondsLeft,
   leaderAnswer,
   pendingAnswerKey,
   submitAnswer,
@@ -20,6 +27,7 @@ export function QuizLeaderPanel({
   const status = round.question_status ?? "waiting";
   const answerLocked = Boolean(leaderAnswer);
   const canAnswer = status === "live" && !answerLocked;
+  const revealed = status === "revealed" || status === "scored";
 
   if (!question) return null;
 
@@ -32,8 +40,20 @@ export function QuizLeaderPanel({
               Question {questionIndex + 1}/{round.question_set?.length ?? 1}
             </p>
             <h2>{round.title}</h2>
+            <p className="muted-text">
+              {formatQuizCategory(question.category)} · {question.difficulty ?? "medium"}
+            </p>
           </div>
-          <div className="round-mini-stat">{status}</div>
+          <div className="round-mini-stat">
+            {status === "live" ? (
+              <>
+                <TimerReset size={16} />
+                {secondsLeft}s
+              </>
+            ) : (
+              status
+            )}
+          </div>
         </div>
         <h3>{question.prompt}</h3>
         <p>
@@ -41,6 +61,8 @@ export function QuizLeaderPanel({
             ? "Tap once. Your answer locks for this question."
             : status === "locked"
             ? "Question locked. Wait for the host to move on."
+            : revealed
+            ? `Correct answer: ${round.correct_answer ?? "Unavailable"}`
             : "Get ready. The host will start the next question."}
         </p>
       </section>
@@ -49,16 +71,22 @@ export function QuizLeaderPanel({
         {question.options.map((option) => {
           const selected = leaderAnswer?.answer === option;
           const pending = pendingAnswerKey === `${round.id}:${questionIndex}:${option}`;
+          const correct = revealed && option === round.correct_answer;
+          const selectedWrong = revealed && selected && !correct;
           return (
             <motion.button
               key={option}
-              className={`answer-option ${selected ? "is-selected" : ""}`}
+              className={`answer-option ${selected ? "is-selected" : ""} ${
+                correct ? "is-correct" : ""
+              } ${selectedWrong ? "is-wrong" : ""}`}
               onClick={() => canAnswer && submitAnswer(option)}
               disabled={!canAnswer || Boolean(pendingAnswerKey)}
               whileTap={{ scale: canAnswer ? 0.97 : 1 }}
             >
               <strong>{option}</strong>
-              {selected && <span>Locked in</span>}
+              {selected && !revealed && <span>Locked in</span>}
+              {correct && <span>Correct answer</span>}
+              {selectedWrong && <span>Your answer</span>}
               {pending && <span>Sending...</span>}
             </motion.button>
           );
@@ -68,12 +96,18 @@ export function QuizLeaderPanel({
       <div className="leader-bottom-action">
         <strong>
           {leaderAnswer
-            ? `Answer locked: ${leaderAnswer.answer}`
+            ? revealed
+              ? leaderAnswer.is_correct
+                ? `Correct: ${leaderAnswer.answer}`
+                : `Your answer: ${leaderAnswer.answer}`
+              : `Answer locked: ${leaderAnswer.answer}`
             : status === "live"
             ? "Choose fast"
+            : revealed
+            ? `Correct answer: ${round.correct_answer ?? "Unavailable"}`
             : "Waiting for host"}
         </strong>
-        <span>Next question appears automatically.</span>
+        <span>{revealed ? "Wait for the host to advance." : "One answer per question."}</span>
       </div>
     </>
   );

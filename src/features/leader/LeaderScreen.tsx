@@ -70,7 +70,7 @@ export function LeaderScreen(props: LeaderScreenProps) {
           <button className="ghost-btn icon-btn" onClick={props.toggleSound} aria-label="Toggle sound">
             {props.soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
           </button>
-          {(voteOpen || answerOpen || quizOpen) && props.activeRound && (
+          {(voteOpen || answerOpen) && props.activeRound && (
             <TimerRing
               secondsLeft={props.secondsLeft}
               duration={getRoundTimerSeconds(props.activeRound)}
@@ -95,6 +95,7 @@ export function LeaderScreen(props: LeaderScreenProps) {
           {quizOpen && props.activeRound ? (
             <QuizLeaderPanel
               round={props.activeRound}
+              secondsLeft={props.secondsLeft}
               leaderAnswer={props.leaderAnswer}
               pendingAnswerKey={props.pendingAnswerKey}
               submitAnswer={props.submitAnswer}

@@ -1,9 +1,8 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { toRoundRecord } from "../app/appHelpers";
 import {
-  getCurrentQuestionAnswers,
   getCurrentQuestionIndex,
-  getFastestCorrect,
+  getQuizAwardPlan,
   isLastQuizQuestion,
 } from "../features/quiz/quizEngine";
 import { getHostSupabase } from "../lib/supabase";
@@ -35,7 +34,7 @@ export function useQuizActions({
   const [pendingQuizAction, setPendingQuizAction] = useState<string | null>(null);
 
   async function updateRound(patch: Partial<RoundRecord>, actionName: string) {
-    if (!activeRound || pendingQuizAction) return;
+    if (!activeRound || pendingQuizAction) return false;
 
     setPendingQuizAction(actionName);
     setLoadError(null);
@@ -56,33 +55,84 @@ export function useQuizActions({
       setRounds((current) =>
         current.map((round) => (round.id === updatedRound.id ? updatedRound : round))
       );
+      return true;
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Unable to update quiz.");
+      return false;
     } finally {
       setPendingQuizAction(null);
     }
   }
 
   function startQuestion() {
+    if (!activeRound || (activeRound.question_status ?? "waiting") !== "waiting") return;
     void updateRound(
       {
         question_status: "live",
+        correct_answer: null,
         question_started_at: new Date().toISOString(),
       },
       "start"
     );
   }
 
-  function lockQuestion() {
-    void updateRound({ question_status: "locked" }, "lock");
+  async function lockQuestion() {
+    if (!activeRound || activeRound.question_status !== "live") return false;
+    return updateRound({ question_status: "locked" }, "lock");
+  }
+
+  async function revealAnswer() {
+    if (
+      !activeRound ||
+      activeRound.question_status !== "locked" ||
+      pendingQuizAction
+    ) {
+      return;
+    }
+
+    setPendingQuizAction("reveal");
+    setLoadError(null);
+
+    try {
+      const hostSupabase = getHostSupabase();
+      const { error: revealError } = await hostSupabase.rpc(
+        "host_reveal_quiz_answer",
+        { p_round_id: activeRound.id }
+      );
+      if (revealError) throw revealError;
+
+      const { data, error } = await hostSupabase
+        .from("rounds")
+        .select(roundColumns)
+        .eq("id", activeRound.id)
+        .single();
+      if (error) throw error;
+
+      const updatedRound = toRoundRecord(data as Record<string, unknown>);
+      setActiveRound(updatedRound);
+      setRounds((current) =>
+        current.map((round) => (round.id === updatedRound.id ? updatedRound : round))
+      );
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to reveal quiz answer.");
+    } finally {
+      setPendingQuizAction(null);
+    }
   }
 
   function nextQuestion() {
-    if (!activeRound || isLastQuizQuestion(activeRound)) return;
+    if (
+      !activeRound ||
+      activeRound.question_status !== "scored" ||
+      isLastQuizQuestion(activeRound)
+    ) {
+      return;
+    }
     void updateRound(
       {
         current_question_index: getCurrentQuestionIndex(activeRound) + 1,
         question_status: "waiting",
+        correct_answer: null,
         question_started_at: null,
       },
       "next"
@@ -90,43 +140,52 @@ export function useQuizActions({
   }
 
   function endQuizRound() {
+    if (!activeRound || activeRound.question_status !== "scored") return;
     void updateRound({ question_status: "complete", status: "locked" }, "end");
   }
 
-  async function awardFastestCorrect() {
-    if (!activeRound || pendingQuizAction) return;
-    const fastest = getFastestCorrect(answerSubmissions, activeRound);
-    if (!fastest) return;
-    const questionIndex = getCurrentQuestionIndex(activeRound);
-    setPendingQuizAction("score-fastest");
-    try {
-      await applyScore(
-        fastest.team_id,
-        10,
-        "Rapid quiz fastest correct",
-        `quiz:${activeRound.id}:${questionIndex}:${fastest.team_id}:fastest`
-      );
-    } finally {
-      setPendingQuizAction(null);
+  async function awardQuestionScores() {
+    if (
+      !activeRound ||
+      activeRound.question_status !== "revealed" ||
+      pendingQuizAction
+    ) {
+      return;
     }
-  }
 
-  async function awardAllCorrect() {
-    if (!activeRound || pendingQuizAction) return;
     const questionIndex = getCurrentQuestionIndex(activeRound);
-    const correctAnswers = getCurrentQuestionAnswers(answerSubmissions, activeRound).filter(
-      (answer) => answer.is_correct
-    );
-    setPendingQuizAction("score-correct");
+    const awards = getQuizAwardPlan(answerSubmissions, activeRound);
+
+    setPendingQuizAction("score-results");
+    setLoadError(null);
     try {
-      for (const answer of correctAnswers) {
+      for (const award of awards) {
         await applyScore(
-          answer.team_id,
-          5,
-          "Rapid quiz correct answer",
-          `quiz:${activeRound.id}:${questionIndex}:${answer.team_id}:all-correct`
+          award.teamId,
+          award.points,
+          award.role === "fastest"
+            ? "Rapid quiz fastest correct"
+            : "Rapid quiz correct answer",
+          `quiz:${activeRound.id}:${questionIndex}:${award.teamId}:result`
         );
       }
+
+      const hostSupabase = getHostSupabase();
+      const { data, error } = await hostSupabase
+        .from("rounds")
+        .update({ question_status: "scored" })
+        .eq("id", activeRound.id)
+        .select(roundColumns)
+        .single();
+      if (error) throw error;
+
+      const updatedRound = toRoundRecord(data as Record<string, unknown>);
+      setActiveRound(updatedRound);
+      setRounds((current) =>
+        current.map((round) => (round.id === updatedRound.id ? updatedRound : round))
+      );
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to score quiz question.");
     } finally {
       setPendingQuizAction(null);
     }
@@ -136,9 +195,9 @@ export function useQuizActions({
     pendingQuizAction,
     startQuestion,
     lockQuestion,
+    revealAnswer,
     nextQuestion,
     endQuizRound,
-    awardFastestCorrect,
-    awardAllCorrect,
+    awardQuestionScores,
   };
 }

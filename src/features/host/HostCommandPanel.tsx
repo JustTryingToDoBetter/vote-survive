@@ -48,10 +48,10 @@ type HostCommandPanelProps = {
     pendingQuizAction: string | null;
     startQuestion: () => void;
     lockQuestion: () => void;
+    revealAnswer: () => void;
     nextQuestion: () => void;
     endQuizRound: () => void;
-    awardFastestCorrect: () => void;
-    awardAllCorrect: () => void;
+    awardQuestionScores: () => void;
   };
   showModeActions: {
     plannedRounds: PlannedRound[];
@@ -234,20 +234,18 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
 
       {props.activeRound &&
         isQuizRound &&
-        props.activeRound.status !== "reveal" &&
-        props.activeRound.status !== "lobby" &&
-        props.activeRound.status !== "complete" &&
-        props.activeRound.status !== "winner" && (
+        props.activeRound.status === "live" && (
           <QuizHostPanel
             round={props.activeRound}
             teams={props.teams}
             submissions={props.answerSubmissions}
+            secondsLeft={props.secondsLeft}
             startQuestion={props.quizActions.startQuestion}
             lockQuestion={props.quizActions.lockQuestion}
+            revealAnswer={props.quizActions.revealAnswer}
             nextQuestion={props.quizActions.nextQuestion}
             endQuizRound={props.quizActions.endQuizRound}
-            awardFastestCorrect={props.quizActions.awardFastestCorrect}
-            awardAllCorrect={props.quizActions.awardAllCorrect}
+            awardQuestionScores={props.quizActions.awardQuestionScores}
             pendingQuizAction={props.quizActions.pendingQuizAction}
           />
         )}

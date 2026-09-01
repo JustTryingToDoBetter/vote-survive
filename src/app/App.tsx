@@ -12,7 +12,12 @@ import {
 import { HomeScreen } from "../features/home/HomeScreen";
 import { HostScreen } from "../features/host/HostScreen";
 import { LeaderScreen } from "../features/leader/LeaderScreen";
-import { getAnswerForTeam, isRapidQuizRound } from "../features/quiz/quizEngine";
+import {
+  getAnswerForTeam,
+  getCurrentQuestionIndex,
+  getQuizSecondsLeft,
+  isRapidQuizRound,
+} from "../features/quiz/quizEngine";
 import { AnimatedLeaderboard } from "../features/shared/AnimatedLeaderboard";
 import { TimerRing } from "../features/shared/TimerRing";
 import { useGameActions } from "../hooks/useGameActions";
@@ -59,6 +64,7 @@ export default function App() {
   const [showWinner, setShowWinner] = useState(false);
   const lastCountdownSoundRef = useRef<number | null>(null);
   const autoLockingRoundRef = useRef<string | null>(null);
+  const autoLockingQuizRef = useRef<string | null>(null);
 
   const session = useRoomSession({ initialPath, initialRoomCode, setMode });
 
@@ -75,7 +81,17 @@ export default function App() {
   const totalVotes = useMemo(() => session.votes.length, [session.votes]);
 
   const secondsLeft = useMemo(() => {
-    if (!session.activeRound || session.activeRound.status !== "voting") return 0;
+    if (!session.activeRound) return 0;
+
+    if (
+      session.activeRound.status === "live" &&
+      isRapidQuizRound(session.activeRound) &&
+      session.activeRound.question_status === "live"
+    ) {
+      return getQuizSecondsLeft(session.activeRound, now);
+    }
+
+    if (session.activeRound.status !== "voting") return 0;
 
     const startedAt = session.activeRound.started_at ?? session.activeRound.created_at;
     const created = new Date(startedAt).getTime();
@@ -205,8 +221,14 @@ export default function App() {
   });
 
   useEffect(() => {
+    const quizCountdownActive = Boolean(
+      session.activeRound &&
+        isRapidQuizRound(session.activeRound) &&
+        session.activeRound.status === "live" &&
+        session.activeRound.question_status === "live"
+    );
     if (
-      session.activeRound?.status === "voting" &&
+      (session.activeRound?.status === "voting" || quizCountdownActive) &&
       secondsLeft <= 5 &&
       secondsLeft > 0 &&
       lastCountdownSoundRef.current !== secondsLeft
@@ -229,6 +251,37 @@ export default function App() {
     autoLockingRoundRef.current = session.activeRound.id;
     void actions.lockVotes();
   }, [actions, secondsLeft, session.activeRound]);
+
+  useEffect(() => {
+    const round = session.activeRound;
+    if (
+      !round ||
+      round.status !== "live" ||
+      !isRapidQuizRound(round) ||
+      round.question_status !== "live" ||
+      !round.question_started_at ||
+      secondsLeft > 0
+    ) {
+      return;
+    }
+
+    const key = `${round.id}:${getCurrentQuestionIndex(round)}`;
+    if (autoLockingQuizRef.current === key) return;
+
+    autoLockingQuizRef.current = key;
+    void quizActions.lockQuestion().then((locked) => {
+      if (!locked && autoLockingQuizRef.current === key) {
+        autoLockingQuizRef.current = null;
+      }
+    });
+  }, [quizActions, secondsLeft, session.activeRound]);
+
+  useEffect(() => {
+    const round = session.activeRound;
+    if (!round || round.question_status !== "live") {
+      autoLockingQuizRef.current = null;
+    }
+  }, [session.activeRound]);
 
   const shouldShowJoinFocus = initialPath === "leader";
 

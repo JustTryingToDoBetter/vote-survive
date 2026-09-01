@@ -1,6 +1,8 @@
 import { motion } from "framer-motion";
+import { TimerReset } from "lucide-react";
 import type { AnswerSubmission, RoundRecord, Team } from "../../lib/types";
 import {
+  formatQuizCategory,
   getCurrentQuestion,
   getCurrentQuestionAnswers,
   getCurrentQuestionIndex,
@@ -11,9 +13,15 @@ type QuizProjectorPanelProps = {
   round: RoundRecord;
   teams: Team[];
   submissions: AnswerSubmission[];
+  secondsLeft: number;
 };
 
-export function QuizProjectorPanel({ round, teams, submissions }: QuizProjectorPanelProps) {
+export function QuizProjectorPanel({
+  round,
+  teams,
+  submissions,
+  secondsLeft,
+}: QuizProjectorPanelProps) {
   const question = getCurrentQuestion(round);
   const questionIndex = getCurrentQuestionIndex(round);
   const answers = getCurrentQuestionAnswers(submissions, round);
@@ -22,6 +30,7 @@ export function QuizProjectorPanel({ round, teams, submissions }: QuizProjectorP
   const fastestTeam = fastestCorrect
     ? teams.find((team) => team.id === fastestCorrect.team_id)
     : null;
+  const revealed = status === "revealed" || status === "scored";
 
   if (!question) return null;
 
@@ -42,10 +51,22 @@ export function QuizProjectorPanel({ round, teams, submissions }: QuizProjectorP
           Question {questionIndex + 1}/{round.question_set?.length ?? 1}
         </p>
         <h2>{round.title}</h2>
+        <p className="muted-on-dark">
+          {formatQuizCategory(question.category)} · {question.difficulty ?? "medium"}
+        </p>
         <h3>{question.prompt}</h3>
+        {status === "live" && (
+          <div className="round-mini-stat">
+            <TimerReset size={18} />
+            {secondsLeft}s left
+          </div>
+        )}
         <div className="quiz-projector-options">
           {question.options.map((option) => (
-            <span key={option} className={status === "locked" && option === question.correctAnswer ? "is-correct" : ""}>
+            <span
+              key={option}
+              className={revealed && option === round.correct_answer ? "is-correct" : ""}
+            >
               {option}
             </span>
           ))}
@@ -57,9 +78,15 @@ export function QuizProjectorPanel({ round, teams, submissions }: QuizProjectorP
           </div>
           <div className="status-strip">
             <span>Fastest correct</span>
-            <strong>{status === "locked" ? fastestTeam?.name ?? "None" : "Hidden"}</strong>
+            <strong>{revealed ? fastestTeam?.name ?? "None" : "Hidden"}</strong>
           </div>
         </div>
+        {revealed && (
+          <div className="latest-score-strip">
+            <strong>Correct answer: {round.correct_answer ?? "Unavailable"}</strong>
+            <span>Fastest correct earns +10 total. Other correct teams earn +5.</span>
+          </div>
+        )}
       </motion.div>
     </section>
   );

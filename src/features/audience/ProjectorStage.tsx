@@ -59,6 +59,7 @@ export function ProjectorStage({
         round={activeRound}
         teams={teams}
         submissions={answerSubmissions}
+        secondsLeft={secondsLeft}
       />
     );
   }

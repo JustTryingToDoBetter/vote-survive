@@ -58,10 +58,10 @@ export type HostScreenProps = {
     pendingQuizAction: string | null;
     startQuestion: () => void;
     lockQuestion: () => void;
+    revealAnswer: () => void;
     nextQuestion: () => void;
     endQuizRound: () => void;
-    awardFastestCorrect: () => void;
-    awardAllCorrect: () => void;
+    awardQuestionScores: () => void;
   };
   showModeActions: {
     plannedRounds: PlannedRound[];

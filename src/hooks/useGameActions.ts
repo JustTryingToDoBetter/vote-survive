@@ -13,6 +13,7 @@ import {
   getCurrentQuestion,
   getCurrentQuestionIndex,
   isRapidQuizRound,
+  toPublicQuizQuestion,
 } from "../features/quiz/quizEngine";
 import { roundRequiresVoting } from "../features/gameflow/gamePhases";
 import { createHostSupabase, getHostSupabase, supabase } from "../lib/supabase";
@@ -246,6 +247,8 @@ export function useGameActions({
       const nextRoundNumber = (rounds[0]?.round_number ?? 0) + 1;
       const status: RoundStatus = "reveal";
       const hostSupabase = getHostSupabase();
+      const quizQuestionSet = definition.questionSet ?? null;
+      const publicQuestionSet = quizQuestionSet?.map(toPublicQuizQuestion) ?? null;
       const selectedTimer =
         Number(customTimerInput) > 0 ? Number(customTimerInput) : timerDuration;
 
@@ -264,8 +267,8 @@ export function useGameActions({
         is_final: definition.isFinal ?? false,
         timer_seconds: definition.requiresVoting ? selectedTimer : null,
         answer_options: definition.answerOptions ?? null,
-        correct_answer: definition.correctAnswer ?? null,
-        question_set: definition.questionSet ?? null,
+        correct_answer: quizQuestionSet?.length ? null : definition.correctAnswer ?? null,
+        question_set: publicQuestionSet,
         current_question_index: definition.currentQuestionIndex ?? 0,
         question_status: definition.questionStatus ?? "waiting",
         question_started_at: null,
@@ -279,6 +282,10 @@ export function useGameActions({
         .single();
 
       if (error) {
+        if (quizQuestionSet?.length) {
+          throw error;
+        }
+
         const legacyPayload: Partial<typeof roundPayload> = { ...roundPayload };
         delete legacyPayload.timer_seconds;
         delete legacyPayload.answer_options;
@@ -302,6 +309,29 @@ export function useGameActions({
         queueRoomRefresh(room.id, 0);
       } else if (insertedRound) {
         const mappedRound = toRoundRecord(insertedRound as Record<string, unknown>);
+
+        if (quizQuestionSet?.length) {
+          const keys = quizQuestionSet.map((question, questionIndex) => {
+            if (!question.correctAnswer) {
+              throw new Error(`Quiz question ${questionIndex + 1} is missing its answer key.`);
+            }
+            return {
+              questionIndex,
+              correctAnswer: question.correctAnswer,
+            };
+          });
+
+          const { error: keyError } = await hostSupabase.rpc(
+            "host_set_quiz_answer_keys",
+            { p_round_id: mappedRound.id, p_keys: keys }
+          );
+
+          if (keyError) {
+            await hostSupabase.from("rounds").delete().eq("id", mappedRound.id);
+            throw keyError;
+          }
+        }
+
         setRounds((current) => [mappedRound, ...current]);
         setActiveRound(mappedRound);
       }
@@ -418,14 +448,14 @@ export function useGameActions({
 
     const currentQuestion = getCurrentQuestion(activeRound);
     const correctAnswer = currentQuestion?.correctAnswer ?? activeRound.correct_answer;
-    if (!correctAnswer) return;
+    if (!rapidQuiz && !correctAnswer) return;
 
     const questionIndex = getCurrentQuestionIndex(activeRound);
     const answerKey = `${activeRound.id}:${questionIndex}:${answer}`;
     if (pendingAnswerKey) return;
 
     const submittedAt = new Date().toISOString();
-    const isCorrect = answer === correctAnswer;
+    const isCorrect = rapidQuiz ? false : answer === correctAnswer;
     const previousSubmission =
       answerSubmissions.find(
         (submission) =>

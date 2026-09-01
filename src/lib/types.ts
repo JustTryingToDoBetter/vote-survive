@@ -25,13 +25,24 @@ export type RoundStatus =
   | "complete"
   | "winner";
 
-export type QuestionStatus = "waiting" | "live" | "locked" | "complete";
+export type QuestionStatus =
+  | "waiting"
+  | "live"
+  | "locked"
+  | "revealed"
+  | "scored"
+  | "complete";
+
+export type QuizCategory = "bible_knowledge" | "bible_reference";
+export type QuizDifficulty = "easy" | "medium" | "hard";
 
 export type QuizQuestion = {
   id: string;
   prompt: string;
   options: string[];
-  correctAnswer: string;
+  correctAnswer?: string;
+  category: QuizCategory;
+  difficulty: QuizDifficulty;
   timeLimitSeconds: number;
   points: number;
 };
