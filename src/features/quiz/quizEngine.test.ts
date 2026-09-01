@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AnswerSubmission, QuizQuestion, RoundRecord } from "../../lib/types";
 import {
+  getAnswerForTeam,
   getCurrentQuestion,
   getCurrentQuestionAnswers,
   getCurrentQuestionIndex,
@@ -96,6 +97,17 @@ describe("quizEngine", () => {
     ]);
   });
 
+  it("returns only the active question answer for a team", () => {
+    const round = makeRound({ current_question_index: 1 });
+    const answers = [
+      makeAnswer({ id: "old", team_id: "team-1", question_index: 0 }),
+      makeAnswer({ id: "current", team_id: "team-1", question_index: 1 }),
+    ];
+
+    expect(getAnswerForTeam(answers, round, "team-1")?.id).toBe("current");
+    expect(getAnswerForTeam(answers, round, "missing")).toBeNull();
+  });
+
   it("finds the fastest correct answer for the active question", () => {
     const round = makeRound({ current_question_index: 1 });
     const answers = [
@@ -173,6 +185,40 @@ describe("quizEngine", () => {
     expect(getQuizAwardPlan(answers, makeRound())).toEqual([
       { teamId: "team-fastest", points: 10, role: "fastest" },
       { teamId: "team-second", points: 5, role: "correct" },
+    ]);
+  });
+
+  it("does not award wrong answers", () => {
+    const answers = [
+      makeAnswer({
+        id: "wrong",
+        team_id: "team-wrong",
+        is_correct: false,
+      }),
+    ];
+
+    expect(getQuizAwardPlan(answers, makeRound())).toEqual([]);
+  });
+
+  it("does not score answers from a previous question", () => {
+    const round = makeRound({ current_question_index: 1 });
+    const answers = [
+      makeAnswer({
+        id: "old-correct",
+        team_id: "team-old",
+        question_index: 0,
+        is_correct: true,
+      }),
+      makeAnswer({
+        id: "current-correct",
+        team_id: "team-current",
+        question_index: 1,
+        is_correct: true,
+      }),
+    ];
+
+    expect(getQuizAwardPlan(answers, round).map((award) => award.teamId)).toEqual([
+      "team-current",
     ]);
   });
 

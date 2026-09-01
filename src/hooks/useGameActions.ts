@@ -17,6 +17,11 @@ import {
 } from "../features/quiz/quizEngine";
 import { roundRequiresVoting } from "../features/gameflow/gamePhases";
 import {
+  getEffectiveScoreDelta,
+  getVoteOutcome,
+  getWinnerOutcome,
+} from "../features/gameflow/gameRules";
+import {
   challengeConfigForRoundType,
   chooseAutomaticRival,
   getChallengeConfig,
@@ -565,28 +570,23 @@ export function useGameActions({
     let rivalTeamId = activeRound.rival_team_id ?? null;
 
     if (activeRound.status === "voting") {
-      const highestCount = Math.max(0, ...sortedVoteCounts.map((entry) => entry.count));
+      const voteOutcome = getVoteOutcome(sortedVoteCounts);
 
-      if (highestCount === 0) {
+      if (voteOutcome.kind === "no_votes") {
         setLoadError("No votes were submitted. Keep voting open or choose another round.");
         return;
       }
 
-      const tiedLeaders = sortedVoteCounts.filter((entry) => entry.count === highestCount);
-      const randomIndex =
-        tiedLeaders.length > 1
-          ? crypto.getRandomValues(new Uint32Array(1))[0] % tiedLeaders.length
-          : 0;
-      const winner = tiedLeaders[randomIndex];
-      targetTeamId = winner?.team.id ?? null;
-
-      if (tiedLeaders.length > 1 && winner) {
+      if (voteOutcome.kind === "tie") {
+        const names = voteOutcome.teams.map((team) => team.name).join(", ");
         setLoadError(
-          `Vote tied at ${highestCount}. Random tiebreak selected ${winner.team.name}.`
+          `Vote tied at ${voteOutcome.count} between ${names}. Keep voting open and run a revote or sudden-death tiebreak.`
         );
-      } else {
-        setLoadError(null);
+        return;
       }
+
+      targetTeamId = voteOutcome.team.id;
+      setLoadError(null);
     }
 
     const config = getChallengeConfig(activeRound);
@@ -749,8 +749,7 @@ export function useGameActions({
     const team = teams.find((entry) => entry.id === teamId);
     if (!team) return;
 
-    const multiplier = activeRound?.round_type === "final_double" ? 2 : 1;
-    const finalDelta = delta * multiplier;
+    const finalDelta = getEffectiveScoreDelta(activeRound?.round_type, delta);
 
     scoringLocksRef.current[teamId] = true;
     setScoringTeamIds((current) => ({ ...current, [teamId]: true }));
@@ -908,23 +907,22 @@ export function useGameActions({
 
   async function revealWinner() {
     if (!room) return;
-    if (teams.length === 0) {
+    const outcome = getWinnerOutcome(teams);
+
+    if (outcome.kind === "no_teams") {
       setLoadError("Cannot reveal a winner without teams.");
       return;
     }
 
-
-    const topScore = Math.max(...teams.map((team) => team.score));
-    const tiedWinners = teams.filter((team) => team.score === topScore);
-
-    if (tiedWinners.length !== 1) {
-      const names = tiedWinners.map((team) => team.name).join(", ");
+    if (outcome.kind === "tie") {
+      const names = outcome.teams.map((team) => team.name).join(", ");
       setLoadError(
         `Final score is tied between ${names}. Run a tiebreak round before revealing the winner.`
       );
       return;
     }
 
+    setLoadError(null);
     const hostSupabase = getHostSupabase();
     const { error } = await hostSupabase
       .from("rooms")

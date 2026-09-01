@@ -86,4 +86,54 @@ describe("challengeEngine", () => {
       "steals up to 5 points"
     );
   });
+
+  it("uses leaderboard leader fallback without ever choosing the pressure team", () => {
+    const target = team("target", 100);
+    const rival = team("rival", 20);
+    const other = team("other", 10);
+    const config = {
+      ...challengeConfigForRoundType("steal"),
+      matchupRule: "leaderboard_leader" as const,
+    };
+
+    expect(
+      chooseAutomaticRival({
+        config,
+        targetTeamId: target.id,
+        teams: [target, rival, other],
+        voteCounts: [],
+      })?.id
+    ).toBe("rival");
+  });
+
+  it("does not auto-pick a rival for host-choice matchups", () => {
+    const target = team("target", 10);
+    const rival = team("rival", 20);
+    const config = {
+      ...challengeConfigForRoundType("steal"),
+      matchupRule: "host_choice" as const,
+    };
+
+    expect(
+      chooseAutomaticRival({
+        config,
+        targetTeamId: target.id,
+        teams: [target, rival],
+        voteCounts: [],
+      })
+    ).toBeNull();
+  });
+
+  it("returns no rival when the pressure team is the only team", () => {
+    const target = team("target", 10);
+
+    expect(
+      chooseAutomaticRival({
+        config: challengeConfigForRoundType("steal"),
+        targetTeamId: target.id,
+        teams: [target],
+        voteCounts: [{ team: target, count: 4 }],
+      })
+    ).toBeNull();
+  });
 });

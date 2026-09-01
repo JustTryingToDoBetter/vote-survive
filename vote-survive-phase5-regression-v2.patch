@@ -1,0 +1,557 @@
+diff --git a/src/features/gameflow/gameRules.ts b/src/features/gameflow/gameRules.ts
+new file mode 100644
+index 0000000..7f2c6d1
+--- /dev/null
++++ b/src/features/gameflow/gameRules.ts
+@@ -0,0 +1,103 @@
++import type { RoundStatus, RoundType, Team } from "../../lib/types";
++import { roundRequiresVoting } from "./gamePhases";
++
++export type VoteCount = {
++  team: Team;
++  count: number;
++};
++
++export type VoteOutcome =
++  | { kind: "no_votes" }
++  | { kind: "tie"; count: number; teams: Team[] }
++  | { kind: "winner"; count: number; team: Team };
++
++export type WinnerOutcome =
++  | { kind: "no_teams" }
++  | { kind: "tie"; score: number; teams: Team[] }
++  | { kind: "winner"; score: number; team: Team };
++
++export function getExpectedLiveStatus(roundType: RoundType): RoundStatus {
++  return roundRequiresVoting(roundType) ? "voting" : "live";
++}
++
++export function canTransitionRound(
++  from: RoundStatus,
++  to: RoundStatus,
++  roundType: RoundType
++) {
++  if (from === "reveal" || from === "lobby") {
++    return to === getExpectedLiveStatus(roundType);
++  }
++
++  if (from === "voting" || from === "live") {
++    return to === "locked";
++  }
++
++  if (from === "locked") {
++    return to === "scoring";
++  }
++
++  if (from === "scoring") {
++    return to === "complete";
++  }
++
++  return false;
++}
++
++export function getVoteOutcome(voteCounts: VoteCount[]): VoteOutcome {
++  const highestCount = Math.max(0, ...voteCounts.map((entry) => entry.count));
++
++  if (highestCount === 0) {
++    return { kind: "no_votes" };
++  }
++
++  const leaders = voteCounts
++    .filter((entry) => entry.count === highestCount)
++    .map((entry) => entry.team);
++
++  if (leaders.length > 1) {
++    return {
++      kind: "tie",
++      count: highestCount,
++      teams: leaders,
++    };
++  }
++
++  return {
++    kind: "winner",
++    count: highestCount,
++    team: leaders[0],
++  };
++}
++
++export function getWinnerOutcome(teams: Team[]): WinnerOutcome {
++  if (teams.length === 0) {
++    return { kind: "no_teams" };
++  }
++
++  const topScore = Math.max(...teams.map((team) => team.score));
++  const leaders = teams.filter((team) => team.score === topScore);
++
++  if (leaders.length > 1) {
++    return {
++      kind: "tie",
++      score: topScore,
++      teams: leaders,
++    };
++  }
++
++  return {
++    kind: "winner",
++    score: topScore,
++    team: leaders[0],
++  };
++}
++
++export function getEffectiveScoreDelta(roundType: RoundType | null | undefined, delta: number) {
++  return roundType === "final_double" ? delta * 2 : delta;
++}
++
++export function getCappedStealAmount(requestedAmount: number, rivalScore: number) {
++  if (!Number.isFinite(requestedAmount) || !Number.isFinite(rivalScore)) return 0;
++  return Math.max(0, Math.min(requestedAmount, rivalScore));
++}
+diff --git a/src/features/gameflow/gameRules.test.ts b/src/features/gameflow/gameRules.test.ts
+new file mode 100644
+index 0000000..45f88cf
+--- /dev/null
++++ b/src/features/gameflow/gameRules.test.ts
+@@ -0,0 +1,156 @@
++import { describe, expect, it } from "vitest";
++import type { RoundStatus, RoundType, Team } from "../../lib/types";
++import {
++  canTransitionRound,
++  getCappedStealAmount,
++  getEffectiveScoreDelta,
++  getExpectedLiveStatus,
++  getVoteOutcome,
++  getWinnerOutcome,
++} from "./gameRules";
++
++function team(id: string, score = 0): Team {
++  return {
++    id,
++    room_id: "room-1",
++    name: id,
++    leader_code: `code-${id}`,
++    score,
++  };
++}
++
++describe("gameRules", () => {
++  describe("state machine", () => {
++    it.each([
++      ["voting", "voting"],
++      ["steal", "voting"],
++      ["all_play", "live"],
++      ["quiz_burst", "live"],
++      ["bible_speed", "live"],
++      ["dance_battle", "live"],
++      ["final_double", "live"],
++    ] satisfies [RoundType, RoundStatus][])(
++      "starts %s rounds in %s",
++      (roundType, expected) => {
++        expect(getExpectedLiveStatus(roundType)).toBe(expected);
++      }
++    );
++
++    it("allows the normal voting lifecycle", () => {
++      expect(canTransitionRound("reveal", "voting", "voting")).toBe(true);
++      expect(canTransitionRound("voting", "locked", "voting")).toBe(true);
++      expect(canTransitionRound("locked", "scoring", "voting")).toBe(true);
++      expect(canTransitionRound("scoring", "complete", "voting")).toBe(true);
++    });
++
++    it("allows the normal non-voting lifecycle", () => {
++      expect(canTransitionRound("reveal", "live", "all_play")).toBe(true);
++      expect(canTransitionRound("live", "locked", "all_play")).toBe(true);
++      expect(canTransitionRound("locked", "scoring", "all_play")).toBe(true);
++      expect(canTransitionRound("scoring", "complete", "all_play")).toBe(true);
++    });
++
++    it.each([
++      ["reveal", "locked", "voting"],
++      ["reveal", "live", "voting"],
++      ["reveal", "voting", "all_play"],
++      ["voting", "scoring", "voting"],
++      ["locked", "complete", "voting"],
++      ["scoring", "winner", "voting"],
++      ["complete", "scoring", "voting"],
++      ["winner", "reveal", "voting"],
++    ] satisfies [RoundStatus, RoundStatus, RoundType][])(
++      "rejects invalid transition %s -> %s",
++      (from, to, roundType) => {
++        expect(canTransitionRound(from, to, roundType)).toBe(false);
++      }
++    );
++  });
++
++  describe("voting", () => {
++    it("blocks a round with zero votes", () => {
++      expect(
++        getVoteOutcome([
++          { team: team("a"), count: 0 },
++          { team: team("b"), count: 0 },
++        ])
++      ).toEqual({ kind: "no_votes" });
++    });
++
++    it("selects the single highest vote winner", () => {
++      expect(
++        getVoteOutcome([
++          { team: team("a"), count: 4 },
++          { team: team("b"), count: 2 },
++          { team: team("c"), count: 1 },
++        ])
++      ).toMatchObject({
++        kind: "winner",
++        count: 4,
++        team: { id: "a" },
++      });
++    });
++
++    it("returns an explicit tie instead of choosing by array or random order", () => {
++      const outcome = getVoteOutcome([
++        { team: team("a"), count: 3 },
++        { team: team("b"), count: 3 },
++        { team: team("c"), count: 1 },
++      ]);
++
++      expect(outcome.kind).toBe("tie");
++      if (outcome.kind !== "tie") throw new Error("Expected tie outcome");
++      expect(outcome.count).toBe(3);
++      expect(outcome.teams.map((entry) => entry.id)).toEqual(["a", "b"]);
++    });
++  });
++
++  describe("final winner", () => {
++    it("returns the only top-scoring team", () => {
++      expect(getWinnerOutcome([team("a", 20), team("b", 12)])).toMatchObject({
++        kind: "winner",
++        score: 20,
++        team: { id: "a" },
++      });
++    });
++
++    it("blocks winner selection when final scores are tied", () => {
++      const outcome = getWinnerOutcome([
++        team("a", 20),
++        team("b", 20),
++        team("c", 4),
++      ]);
++
++      expect(outcome.kind).toBe("tie");
++      if (outcome.kind !== "tie") throw new Error("Expected tie outcome");
++      expect(outcome.teams.map((entry) => entry.id)).toEqual(["a", "b"]);
++    });
++
++    it("does not invent a winner when there are no teams", () => {
++      expect(getWinnerOutcome([])).toEqual({ kind: "no_teams" });
++    });
++  });
++
++  describe("scoring", () => {
++    it("leaves normal round scores unchanged", () => {
++      expect(getEffectiveScoreDelta("voting", 10)).toBe(10);
++      expect(getEffectiveScoreDelta("voting", -3)).toBe(-3);
++    });
++
++    it("doubles both positive and negative final-round deltas", () => {
++      expect(getEffectiveScoreDelta("final_double", 10)).toBe(20);
++      expect(getEffectiveScoreDelta("final_double", -3)).toBe(-6);
++    });
++
++    it("caps steals at the rival's available balance", () => {
++      expect(getCappedStealAmount(5, 12)).toBe(5);
++      expect(getCappedStealAmount(5, 3)).toBe(3);
++      expect(getCappedStealAmount(5, 0)).toBe(0);
++    });
++
++    it("never produces a negative steal", () => {
++      expect(getCappedStealAmount(5, -10)).toBe(0);
++      expect(getCappedStealAmount(-5, 10)).toBe(0);
++    });
++  });
++});
+diff --git a/src/features/gameflow/gamePhases.test.ts b/src/features/gameflow/gamePhases.test.ts
+new file mode 100644
+index 0000000..d992be4
+--- /dev/null
++++ b/src/features/gameflow/gamePhases.test.ts
+@@ -0,0 +1,59 @@
++import { describe, expect, it } from "vitest";
++import type { Room, RoundRecord, RoundStatus } from "../../lib/types";
++import { getHostPhase, getProjectorState } from "./gamePhases";
++
++function room(status = "active"): Room {
++  return {
++    id: "room-1",
++    code: "ABC123",
++    status,
++  };
++}
++
++function round(status: RoundStatus): RoundRecord {
++  return {
++    id: "round-1",
++    room_id: "room-1",
++    round_type: "voting",
++    title: "Round",
++    prompt: "Prompt",
++    challenge: "Challenge",
++    scoring_guide: "Scoring",
++    status,
++    target_team_id: null,
++    created_at: "2026-09-01T00:00:00.000Z",
++  };
++}
++
++describe("gamePhases", () => {
++  it("maps the full host lifecycle", () => {
++    expect(getHostPhase(room(), null, false)).toBe("lobby");
++    expect(getHostPhase(room(), round("reveal"), false)).toBe("round_reveal");
++    expect(getHostPhase(room(), round("voting"), false)).toBe("voting");
++    expect(getHostPhase(room(), round("live"), false)).toBe("voting");
++    expect(getHostPhase(room(), round("locked"), false)).toBe("locked");
++    expect(getHostPhase(room(), round("scoring"), false)).toBe("scoring");
++    expect(getHostPhase(room(), round("complete"), false)).toBe("leaderboard");
++  });
++
++  it("lets room winner state override a completed round", () => {
++    expect(getHostPhase(room("winner"), round("complete"), false)).toBe("final_reveal");
++  });
++
++  it("lets explicit winner reveal override room and round state", () => {
++    expect(getHostPhase(room(), round("scoring"), true)).toBe("final_reveal");
++  });
++
++  it("maps projector states for reconnect-safe persisted statuses", () => {
++    expect(getProjectorState(room(), null, false)).toBe("Waiting for host");
++    expect(getProjectorState(room(), round("reveal"), false)).toBe("Round reveal");
++    expect(getProjectorState(room(), round("voting"), false)).toBe("Voting open");
++    expect(getProjectorState(room(), round("live"), false)).toBe("Task live");
++    expect(getProjectorState(room(), round("locked"), false)).toBe("Votes locked");
++    expect(getProjectorState(room(), round("scoring"), false)).toBe("Scoring");
++    expect(getProjectorState(room(), round("complete"), false)).toBe("Leaderboard");
++    expect(getProjectorState(room("winner"), round("complete"), false)).toBe(
++      "Winner reveal"
++    );
++  });
++});
+diff --git a/src/hooks/useGameActions.ts b/src/hooks/useGameActions.ts
+index bc556a1..3f66ad1 100644
+--- a/src/hooks/useGameActions.ts
++++ b/src/hooks/useGameActions.ts
+@@ -14,6 +14,11 @@ import {
+   toPublicQuizQuestion,
+ } from "../features/quiz/quizEngine";
+ import { roundRequiresVoting } from "../features/gameflow/gamePhases";
++import {
++  getEffectiveScoreDelta,
++  getVoteOutcome,
++  getWinnerOutcome,
++} from "../features/gameflow/gameRules";
+ import {
+   challengeConfigForRoundType,
+   chooseAutomaticRival,
+@@ -531,28 +536,23 @@ export function useGameActions({
+     let rivalTeamId = activeRound.rival_team_id ?? null;
+ 
+     if (activeRound.status === "voting") {
+-      const highestCount = Math.max(0, ...sortedVoteCounts.map((entry) => entry.count));
++      const voteOutcome = getVoteOutcome(sortedVoteCounts);
+ 
+-      if (highestCount === 0) {
++      if (voteOutcome.kind === "no_votes") {
+         setLoadError("No votes were submitted. Keep voting open or choose another round.");
+         return;
+       }
+ 
+-      const tiedLeaders = sortedVoteCounts.filter((entry) => entry.count === highestCount);
+-      const randomIndex =
+-        tiedLeaders.length > 1
+-          ? crypto.getRandomValues(new Uint32Array(1))[0] % tiedLeaders.length
+-          : 0;
+-      const winner = tiedLeaders[randomIndex];
+-      targetTeamId = winner?.team.id ?? null;
+-
+-      if (tiedLeaders.length > 1 && winner) {
++      if (voteOutcome.kind === "tie") {
++        const names = voteOutcome.teams.map((team) => team.name).join(", ");
+         setLoadError(
+-          `Vote tied at ${highestCount}. Random tiebreak selected ${winner.team.name}.`
++          `Vote tied at ${voteOutcome.count} between ${names}. Keep voting open and run a revote or sudden-death tiebreak.`
+         );
+-      } else {
+-        setLoadError(null);
++        return;
+       }
++
++      targetTeamId = voteOutcome.team.id;
++      setLoadError(null);
+     }
+ 
+     const config = getChallengeConfig(activeRound);
+@@ -712,8 +720,7 @@ export function useGameActions({
+     const team = teams.find((entry) => entry.id === teamId);
+     if (!team) return;
+ 
+-    const multiplier = activeRound?.round_type === "final_double" ? 2 : 1;
+-    const finalDelta = delta * multiplier;
++    const finalDelta = getEffectiveScoreDelta(activeRound?.round_type, delta);
+ 
+     scoringLocksRef.current[teamId] = true;
+     setScoringTeamIds((current) => ({ ...current, [teamId]: true }));
+@@ -912,22 +919,21 @@ export function useGameActions({
+   async function revealWinner() {
+     if (!room) return;
+-    if (teams.length === 0) {
++    const outcome = getWinnerOutcome(teams);
++
++    if (outcome.kind === "no_teams") {
+       setLoadError("Cannot reveal a winner without teams.");
+       return;
+     }
+ 
+-
+-    const topScore = Math.max(...teams.map((team) => team.score));
+-    const tiedWinners = teams.filter((team) => team.score === topScore);
+-
+-    if (tiedWinners.length !== 1) {
+-      const names = tiedWinners.map((team) => team.name).join(", ");
++    if (outcome.kind === "tie") {
++      const names = outcome.teams.map((team) => team.name).join(", ");
+       setLoadError(
+         `Final score is tied between ${names}. Run a tiebreak round before revealing the winner.`
+       );
+       return;
+     }
+ 
++    setLoadError(null);
+     const hostSupabase = getHostSupabase();
+     const { error } = await hostSupabase
+       .from("rooms")
+diff --git a/src/features/challenge/challengeEngine.test.ts b/src/features/challenge/challengeEngine.test.ts
+index 79691c8..5549d43 100644
+--- a/src/features/challenge/challengeEngine.test.ts
++++ b/src/features/challenge/challengeEngine.test.ts
+@@ -78,4 +78,54 @@ describe("challengeEngine", () => {
+       "steals up to 5 points"
+     );
+   });
++
++  it("uses leaderboard leader fallback without ever choosing the pressure team", () => {
++    const target = team("target", 100);
++    const rival = team("rival", 20);
++    const other = team("other", 10);
++    const config = {
++      ...challengeConfigForRoundType("steal"),
++      matchupRule: "leaderboard_leader" as const,
++    };
++
++    expect(
++      chooseAutomaticRival({
++        config,
++        targetTeamId: target.id,
++        teams: [target, rival, other],
++        voteCounts: [],
++      })?.id
++    ).toBe("rival");
++  });
++
++  it("does not auto-pick a rival for host-choice matchups", () => {
++    const target = team("target", 10);
++    const rival = team("rival", 20);
++    const config = {
++      ...challengeConfigForRoundType("steal"),
++      matchupRule: "host_choice" as const,
++    };
++
++    expect(
++      chooseAutomaticRival({
++        config,
++        targetTeamId: target.id,
++        teams: [target, rival],
++        voteCounts: [],
++      })
++    ).toBeNull();
++  });
++
++  it("returns no rival when the pressure team is the only team", () => {
++    const target = team("target", 10);
++
++    expect(
++      chooseAutomaticRival({
++        config: challengeConfigForRoundType("steal"),
++        targetTeamId: target.id,
++        teams: [target],
++        voteCounts: [{ team: target, count: 4 }],
++      })
++    ).toBeNull();
++  });
+ });
+diff --git a/src/features/quiz/quizEngine.test.ts b/src/features/quiz/quizEngine.test.ts
+index d00c308..a75c7da 100644
+--- a/src/features/quiz/quizEngine.test.ts
++++ b/src/features/quiz/quizEngine.test.ts
+@@ -3,4 +3,5 @@ import type { AnswerSubmission, QuizQuestion, RoundRecord } from "../../lib/types";
+ import {
++  getAnswerForTeam,
+   getCurrentQuestion,
+   getCurrentQuestionAnswers,
+   getCurrentQuestionIndex,
+@@ -129,6 +130,17 @@ describe("quizEngine", () => {
+     ]);
+   });
+ 
++  it("returns only the active question answer for a team", () => {
++    const round = makeRound({ current_question_index: 1 });
++    const answers = [
++      makeAnswer({ id: "old", team_id: "team-1", question_index: 0 }),
++      makeAnswer({ id: "current", team_id: "team-1", question_index: 1 }),
++    ];
++
++    expect(getAnswerForTeam(answers, round, "team-1")?.id).toBe("current");
++    expect(getAnswerForTeam(answers, round, "missing")).toBeNull();
++  });
++
+   it("finds the fastest correct answer for the active question", () => {
+     const round = makeRound({ current_question_index: 1 });
+     const answers = [
+@@ -223,6 +240,40 @@ describe("quizEngine", () => {
+     ]);
+   });
+ 
++  it("does not award wrong answers", () => {
++    const answers = [
++      makeAnswer({
++        id: "wrong",
++        team_id: "team-wrong",
++        is_correct: false,
++      }),
++    ];
++
++    expect(getQuizAwardPlan(answers, makeRound())).toEqual([]);
++  });
++
++  it("does not score answers from a previous question", () => {
++    const round = makeRound({ current_question_index: 1 });
++    const answers = [
++      makeAnswer({
++        id: "old-correct",
++        team_id: "team-old",
++        question_index: 0,
++        is_correct: true,
++      }),
++      makeAnswer({
++        id: "current-correct",
++        team_id: "team-current",
++        question_index: 1,
++        is_correct: true,
++      }),
++    ];
++
++    expect(getQuizAwardPlan(answers, round).map((award) => award.teamId)).toEqual([
++      "team-current",
++    ]);
++  });
++
+   it("detects the final quiz question", () => {
+     expect(isLastQuizQuestion(makeRound({ current_question_index: 0 }))).toBe(false);
+     expect(isLastQuizQuestion(makeRound({ current_question_index: 1 }))).toBe(true);
