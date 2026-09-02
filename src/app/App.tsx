@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { ChartNoAxesColumnIncreasing, Eye, Lock, Radio, Sparkles, Star, Trophy, Users } from "lucide-react";
 import { WinnerReveal } from "../features/audience/WinnerReveal";
 import { ProjectorStage } from "../features/audience/ProjectorStage";
 import {
   DEFAULT_ROUND_SECONDS,
   formatSyncState,
+  getProjectorState,
   getRoundTimerSeconds,
   type SyncState,
 } from "../features/gameflow/gamePhases";
@@ -20,7 +21,6 @@ import {
   shouldAutoStartQuizQuestion,
 } from "../features/quiz/quizEngine";
 import { AnimatedLeaderboard } from "../features/shared/AnimatedLeaderboard";
-import { TimerRing } from "../features/shared/TimerRing";
 import { useGameActions } from "../hooks/useGameActions";
 import { useQuizActions } from "../hooks/useQuizActions";
 import { useRoomSession } from "../hooks/useRoomSession";
@@ -511,14 +511,9 @@ function GameScreen(props: {
         <div>
           <p className="section-kicker">Game screen</p>
           <h1>{props.room.code}</h1>
-          <p className="header-helper">Sync {formatSyncState(props.syncState)}</p>
+          <p className="header-helper">Live game</p>
         </div>
-        {props.activeRound?.status === "voting" && (
-          <TimerRing
-            secondsLeft={props.secondsLeft}
-            duration={getRoundTimerSeconds(props.activeRound)}
-          />
-        )}
+        <GamePhaseTracker room={props.room} activeRound={props.activeRound} showWinner={props.showWinner} />
       </header>
 
       {props.showWinner && props.winnerTeam ? (
@@ -537,10 +532,27 @@ function GameScreen(props: {
           secondsLeft={props.secondsLeft}
           totalVotes={props.totalVotes}
           answerSubmissions={props.answerSubmissions}
+          sortedTeams={props.sortedTeams}
         />
       )}
     </motion.main>
   );
+}
+
+function GamePhaseTracker(props: { room: Room; activeRound: RoundRecord | null; showWinner: boolean }) {
+  const currentState = getProjectorState(props.room, props.activeRound, props.showWinner);
+  const phases = [
+    { label: "Lobby", state: "Waiting for host", icon: Users },
+    { label: "Reveal", state: "Round reveal", icon: Eye },
+    { label: "Live", state: "Voting open", alternate: "Task live", icon: Radio },
+    { label: "Locked", state: "Votes locked", icon: Lock },
+    { label: "Scoring", state: "Scoring", icon: ChartNoAxesColumnIncreasing },
+    { label: "Leaderboard", state: "Leaderboard", icon: Trophy },
+    { label: "Final", state: "Winner reveal", icon: Star },
+  ];
+  const activeIndex = Math.max(0, phases.findIndex((phase) => phase.state === currentState || phase.alternate === currentState));
+
+  return <div className="game-phase-tracker" aria-label={`Current game phase: ${phases[activeIndex]?.label ?? "Lobby"}`}>{phases.map((phase, index) => { const Icon = phase.icon; return <div key={phase.label} className={`game-phase-step ${index < activeIndex ? "is-complete" : ""} ${index === activeIndex ? "is-current" : ""}`}><Icon size={17} /><span>{phase.label}</span></div>; })}</div>;
 }
 
 function LeaderboardScreen(props: {
