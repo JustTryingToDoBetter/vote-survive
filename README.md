@@ -39,10 +39,29 @@ Vote Survive is a live youth-room game show app for team nights. A host runs rou
 
 ```bash
 npm install
+npx supabase start
+npx supabase db reset
 npm run dev
 ```
 
-The dev server runs with Vite. Create a `.env` file with Supabase credentials before launching the app.
+The dev server runs with Vite. For a fully local game, use the local Supabase API and publishable key shown by `npx supabase status`.
+
+### Test a full game locally
+
+1. Start Supabase: `npx supabase start`.
+2. Reset/apply the local schema: `npx supabase db reset`.
+3. Put the local API details in `.env.local`:
+
+```bash
+VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_ANON_KEY=your_local_publishable_key
+```
+
+4. Start Vite for your network: `npm run dev:lan`.
+5. Open the printed localhost URL on the host laptop and select **Host a Game**.
+6. On leaders' phones, open the printed network URL (for example `http://192.168.x.x:5173`), then enter the room and team codes.
+
+Supabase Studio is available at `http://127.0.0.1:54323` while the local stack is running. Keep the local API key out of committed files when sharing the repository.
 
 ## Environment Variables
 

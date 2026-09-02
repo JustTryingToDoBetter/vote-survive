@@ -24,7 +24,6 @@ import { TimerRing } from "../features/shared/TimerRing";
 import { useGameActions } from "../hooks/useGameActions";
 import { useQuizActions } from "../hooks/useQuizActions";
 import { useRoomSession } from "../hooks/useRoomSession";
-import { useShowModeActions } from "../hooks/useShowModeActions";
 import { useSoundEffects } from "../hooks/useSoundEffects";
 import type {
   AnswerSubmission,
@@ -222,14 +221,6 @@ export default function App() {
     applyScore: actions.applyScore,
   });
 
-  const showModeActions = useShowModeActions({
-    room: session.room,
-    activeRound: session.activeRound,
-    setRoom: session.setRoom,
-    setLoadError: session.setLoadError,
-    startRound: actions.startRound,
-  });
-
   useEffect(() => {
     const quizCountdownActive = Boolean(
       session.activeRound &&
@@ -394,7 +385,6 @@ export default function App() {
           revealWinner={actions.revealWinner}
           resetGame={actions.resetGame}
           quizActions={quizActions}
-          showModeActions={showModeActions}
           updateTeamContent={actions.updateTeamContent}
           updateRoundContent={actions.updateRoundContent}
           showWinner={showWinner}

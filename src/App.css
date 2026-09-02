@@ -2307,3 +2307,69 @@ body { background: radial-gradient(circle at 86% 0%, rgba(189, 228, 211, .55), t
   .landing-hero h1 { font-size: clamp(4rem, 6.2vw, 4.8rem); }
   .landing-feature { padding-right: 15px; padding-left: 15px; }
 }
+
+/* Host console: one game moment at a time, with room utilities kept secondary. */
+.host-console { width: min(1200px, 100%); gap: 22px; }
+.host-console .game-header { padding: 8px 0 24px; gap: 24px; }
+.host-console .game-header .section-kicker { color: var(--gold-dark); }
+.host-console .game-header h1, .host-console .host-gameflow-copy h2, .host-console .round-toolbar h2, .host-console .host-setup-edit h3, .host-console .host-live-stage .empty-state h2 { font-family: Georgia, "Times New Roman", serif; }
+.host-console .game-header h1 { font-size: clamp(3.75rem, 7vw, 5.6rem); line-height: .9; letter-spacing: -.06em; }
+.host-console .header-actions { gap: 10px; flex-wrap: wrap; }
+.host-console .header-actions .ghost-btn, .host-console .header-actions .primary-btn { min-height: 46px; padding: 10px 15px; border-radius: 10px; font-size: .82rem; }
+.host-console .header-actions .primary-btn, .host-console .host-primary-action, .host-console .round-controls .primary-btn { box-shadow: 0 4px 0 var(--gold-dark); }
+.host-console .header-actions .primary-btn:active, .host-console .host-primary-action:active, .host-console .round-controls .primary-btn:active { transform: translateY(3px); box-shadow: none; }
+
+.host-console .host-gameflow { display: grid; grid-template-columns: minmax(190px, .62fr) minmax(0, 1.75fr) minmax(185px, .62fr); align-items: center; gap: 28px; padding: 28px 22px; border: 1px solid var(--border-subtle); border-radius: 18px; background: var(--surface); box-shadow: 0 8px 24px rgba(18, 35, 59, .05); }
+.host-console .host-gameflow-copy .section-kicker { color: #28a6a4; }
+.host-console .host-gameflow-copy h2 { margin: 8px 0 10px; font-size: clamp(2rem, 3.7vw, 3.5rem); line-height: .94; }
+.host-console .host-gameflow-copy span { max-width: 230px; line-height: 1.5; }
+.host-console .phase-rail { gap: 0; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.host-console .phase-lane { min-height: 64px; padding: 0 4px; color: var(--navy-muted); }
+.host-console .phase-lane::before { top: 16px; background: #d9dee5; }
+.host-console .phase-lane span { width: 34px; height: 34px; margin-bottom: 7px; background: #edf0f4; color: var(--navy); }
+.host-console .phase-lane.is-current span { background: var(--gold); box-shadow: 0 0 0 5px #fff5d9; }
+.host-console .phase-lane b { font-size: .68rem; line-height: 1.25; }
+.host-console .host-primary-action { width: 100%; min-height: 64px; justify-content: center; font-size: .96rem; }
+.host-console .phase-mobile-summary { display: none; }
+
+.host-console .host-grid { align-items: start; gap: 22px; }
+.host-console .host-main-column, .host-console .host-run-game { display: grid; gap: 20px; }
+.host-console .status-strip-inline { display: flex; width: fit-content; gap: 10px; margin: 0; padding: 0; background: transparent; border: 0; }
+.host-console .status-pill { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 13px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface); color: var(--navy); font-weight: 800; box-shadow: none; }
+.host-console .status-pill small { color: var(--navy-muted); font-size: .68rem; letter-spacing: .04em; text-transform: uppercase; }
+.host-console .status-pill:last-child { margin-left: 0; }
+.host-console .host-round-setup { padding: 28px 30px; border: 1px solid var(--border-subtle); border-radius: 18px; background: var(--surface); box-shadow: 0 8px 24px rgba(18, 35, 59, .045); }
+.host-console .round-toolbar { align-items: start; }
+.host-console .round-toolbar h2 { margin: 8px 0 0; font-size: clamp(2.1rem, 4vw, 3.45rem); line-height: .95; }
+.host-console .round-controls { width: min(100%, 320px); display: grid; grid-template-columns: 1fr; gap: 12px; }
+.host-console .round-controls select { min-height: 54px; width: 100%; border: 1px solid #cfd5dd; border-radius: 10px; background: #fff; color: var(--navy); }
+.host-console .round-controls .primary-btn { min-height: 54px; justify-content: center; }
+.host-console .timer-control-panel { margin-top: 24px; padding-top: 20px; }
+.host-console .timer-option-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.host-console .timer-option-row .ghost-btn { min-width: 86px; min-height: 48px; justify-content: center; }
+.host-console .timer-custom-input { min-height: 48px; min-width: 145px; flex: 1; }
+.host-console .host-live-stage { min-height: 300px; display: grid; align-content: center; border: 1px solid rgba(40, 166, 164, .22); border-radius: 16px; background: linear-gradient(135deg, #f2f9f7, #fffdf8 68%); box-shadow: none; overflow: hidden; }
+.host-console .host-live-stage .empty-state { min-height: 240px; padding: 28px; }
+.host-console .host-live-stage .empty-state svg { color: #28a6a4; }
+.host-console .host-live-stage .empty-state h2 { color: var(--navy); }
+
+.host-console .host-setup-edit { position: sticky; top: 16px; display: grid; gap: 14px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.host-console .host-setup-edit > .stage-block { padding: 20px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface); box-shadow: 0 7px 20px rgba(18, 35, 59, .035); }
+.host-console .host-setup-edit .panel-topline { margin-bottom: 12px; }
+.host-console .host-setup-edit h3 { margin: 7px 0 0; color: var(--navy); font-size: 1.35rem; }
+.host-console .room-code-panel { padding: 20px 14px; border: 1px solid rgba(233, 169, 43, .46); border-radius: 10px; background: #fff9e9; text-align: center; }
+.host-console .room-code-panel strong { color: #28a6a4; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2.25rem, 4vw, 3.3rem); letter-spacing: .03em; }
+.host-console .room-code-panel .muted-text { margin: 10px auto 0; max-width: 250px; }
+.host-console .team-code-list { display: grid; gap: 8px; }
+.host-console .team-code-card { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 58px; padding: 8px 10px; border: 1px solid #e2e5e8; border-left: 5px solid var(--team-color); border-radius: 10px; background: #fff; box-shadow: none; }
+.host-console .team-code-card strong { display: block; color: var(--navy); }
+.host-console .team-code-card span { display: block; margin-top: 2px; color: var(--navy-muted); font-size: .76rem; }
+.host-console .team-connection { width: 9px; height: 9px; border-radius: 50%; background: #cbd3da; }
+.host-console .team-connection.is-connected { background: #28a6a4; }
+.host-console .host-setup-edit .wide-btn { width: 100%; min-height: 44px; justify-content: center; margin-top: 9px; }
+.host-console .host-setup-edit .danger-btn { margin-top: 13px; }
+.host-console .host-setup-edit .admin-editor { display: none; }
+
+@media (min-width: 1024px) { .host-console .host-grid { grid-template-columns: minmax(0, 1.85fr) minmax(290px, .82fr); } }
+@media (max-width: 900px) { .host-console .host-gameflow { grid-template-columns: minmax(160px, .72fr) minmax(0, 1.5fr) minmax(160px, .65fr); gap: 16px; } .host-console .round-toolbar { display: grid; gap: 20px; } .host-console .round-controls { width: 100%; max-width: none; } }
+@media (max-width: 719px) { .host-console { gap: 18px; padding: 16px; } .host-console .game-header { padding-bottom: 18px; } .host-console .header-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; } .host-console .header-actions .ghost-btn, .host-console .header-actions .primary-btn { width: 100%; padding: 10px 8px; font-size: .74rem; } .host-console .host-gameflow { display: grid; grid-template-columns: 1fr; padding: 23px 18px; gap: 16px; } .host-console .host-gameflow-copy span { max-width: none; } .host-console .phase-rail { display: none; } .host-console .phase-mobile-summary { display: block; margin: 0; color: var(--navy-muted); font-size: .82rem; font-weight: 800; } .host-console .host-primary-action { min-height: 56px; } .host-console .status-strip-inline { width: 100%; flex-wrap: wrap; } .host-console .status-pill { flex: 1 1 130px; justify-content: center; } .host-console .host-round-setup { padding: 24px 18px; } .host-console .round-toolbar h2 { font-size: clamp(2rem, 10vw, 2.9rem); } .host-console .timer-option-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .host-console .timer-option-row .ghost-btn, .host-console .timer-custom-input { min-width: 0; width: 100%; } .host-console .host-live-stage { min-height: 250px; } .host-console .host-setup-edit { position: static; } }

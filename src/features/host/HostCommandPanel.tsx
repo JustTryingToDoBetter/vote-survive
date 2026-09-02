@@ -11,10 +11,8 @@ import { TimerRing } from "../shared/TimerRing";
 import { QuizHostPanel } from "../quiz/QuizHostPanel";
 import { isRapidQuizRound } from "../quiz/quizEngine";
 import { ChallengeControlPanel } from "../challenge/ChallengeControlPanel";
-import { HostShowModePanel } from "./HostShowModePanel";
 import type {
   AnswerSubmission,
-  PlannedRound,
   RoundDefinition,
   RoundRecord,
   RoundStatus,
@@ -55,15 +53,6 @@ type HostCommandPanelProps = {
     nextQuestion: () => void;
     endQuizRound: () => void;
     awardQuestionScores: () => void;
-  };
-  showModeActions: {
-    plannedRounds: PlannedRound[];
-    pendingShowAction: string | null;
-    canStartPlannedRound: boolean;
-    addPlannedRound: (roundType: RoundType) => void;
-    skipPlannedRound: (itemId?: string) => void;
-    movePlannedRound: (itemId: string, direction: -1 | 1) => void;
-    startNextPlannedRound: () => void;
   };
 };
 
@@ -115,19 +104,7 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
         <StatusPill label="Sync" value={formatSyncState(props.syncState)} />
       </div>
 
-      <HostShowModePanel
-        plannedRounds={props.showModeActions.plannedRounds}
-        pendingShowAction={props.showModeActions.pendingShowAction}
-        canStartPlannedRound={props.showModeActions.canStartPlannedRound}
-        selectedRoundType={props.selectedRoundType}
-        setSelectedRoundType={props.setSelectedRoundType}
-        addPlannedRound={props.showModeActions.addPlannedRound}
-        skipPlannedRound={props.showModeActions.skipPlannedRound}
-        movePlannedRound={props.showModeActions.movePlannedRound}
-        startNextPlannedRound={props.showModeActions.startNextPlannedRound}
-      />
-
-      <div className="stage-block">
+      <div className="stage-block host-round-setup">
         <div className="round-toolbar">
           <div>
             <p className="section-kicker">Run Game</p>
@@ -172,7 +149,7 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
         />
       </div>
 
-      <div className={`stage-block ${props.activeRound?.round_type === "final_double" ? "final-round-card" : ""}`}>
+      <div className={`stage-block host-live-stage ${props.activeRound?.round_type === "final_double" ? "final-round-card" : ""}`}>
         {activeDefinition ? (
           <RoundReveal
             round={activeDefinition}

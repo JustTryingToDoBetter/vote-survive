@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Eye, Sparkles, Trophy, Volume2, VolumeX } from "lucide-react";
+import { Monitor, Shuffle, Trophy, Volume2, VolumeX } from "lucide-react";
 import type React from "react";
 import { HostGameflow } from "../gameflow/HostGameflow";
 import { WinnerReveal } from "../audience/WinnerReveal";
@@ -9,7 +9,6 @@ import { HostSetupPanel } from "./HostSetupPanel";
 import type { SyncState } from "../gameflow/gamePhases";
 import type {
   AnswerSubmission,
-  PlannedRound,
   Room,
   RoundDefinition,
   RoundRecord,
@@ -66,15 +65,6 @@ export type HostScreenProps = {
     endQuizRound: () => void;
     awardQuestionScores: () => void;
   };
-  showModeActions: {
-    plannedRounds: PlannedRound[];
-    pendingShowAction: string | null;
-    canStartPlannedRound: boolean;
-    addPlannedRound: (roundType: RoundType) => void;
-    skipPlannedRound: (itemId?: string) => void;
-    movePlannedRound: (itemId: string, direction: -1 | 1) => void;
-    startNextPlannedRound: () => void;
-  };
   updateTeamContent: (
     teamId: string,
     patch: Partial<Pick<Team, "name" | "animal" | "avatar_emoji" | "avatar_image">>
@@ -110,14 +100,14 @@ export function HostScreen(props: HostScreenProps) {
 
   return (
     <motion.main
-      className="game-shell"
+      className="game-shell host-console"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <header className="game-header">
         <div>
-          <p className="section-kicker">Host screen</p>
+          <p className="section-kicker">Host room</p>
           <h1>{props.room.code}</h1>
           <p className="header-helper">
             The room is live. Leaders can join any time while you run rounds.
@@ -130,11 +120,11 @@ export function HostScreen(props: HostScreenProps) {
             {props.soundEnabled ? "Sound on" : "Sound off"}
           </button>
           <button className="primary-btn" onClick={() => props.startRound()} disabled={!canStartRound}>
-            <Sparkles size={18} />
+            <Shuffle size={18} />
             Start random
           </button>
           <a className="ghost-btn" href={gameUrl} target="_blank" rel="noreferrer">
-            <Eye size={18} />
+            <Monitor size={18} />
             Game screen
           </a>
           <a className="ghost-btn" href={leaderboardUrl} target="_blank" rel="noreferrer">
@@ -186,7 +176,6 @@ export function HostScreen(props: HostScreenProps) {
             completeRound={props.completeRound}
             applyScore={props.applyScore}
             quizActions={props.quizActions}
-            showModeActions={props.showModeActions}
           />
 
           {isScoringRound && props.activeRound && (
@@ -215,7 +204,6 @@ export function HostScreen(props: HostScreenProps) {
         <HostSetupPanel
           roomCode={props.room.code}
           teams={props.teams}
-          sortedTeams={props.sortedTeams}
           leaderboardUrl={leaderboardUrl}
           revealWinner={props.revealWinner}
           resetGame={props.resetGame}

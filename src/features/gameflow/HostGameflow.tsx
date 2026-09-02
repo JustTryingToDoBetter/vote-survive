@@ -116,6 +116,7 @@ export function HostGameflow({
           </div>
         ))}
       </div>
+      <p className="phase-mobile-summary">Step {phaseIndex + 1} of {hostPhaseOrder.length}</p>
 
       <motion.button
         className="primary-btn host-primary-action"

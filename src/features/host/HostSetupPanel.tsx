@@ -2,14 +2,12 @@ import { useState } from "react";
 import type React from "react";
 import { Crown, RotateCcw, Trophy } from "lucide-react";
 import { TEAM_COLOR_OPTIONS } from "../../data/teamPresets";
-import { AnimatedLeaderboard } from "../shared/AnimatedLeaderboard";
 import { TeamAvatar } from "../shared/TeamAvatar";
 import type { RoundRecord, Team } from "../../lib/types";
 
 type HostSetupPanelProps = {
   roomCode: string;
   teams: Team[];
-  sortedTeams: Team[];
   leaderboardUrl: string;
   revealWinner: () => void;
   resetGame: () => void;
@@ -30,14 +28,12 @@ type HostSetupPanelProps = {
 };
 
 export function HostSetupPanel(props: HostSetupPanelProps) {
-  const maxScore = Math.max(1, ...props.sortedTeams.map((team) => team.score));
-
   return (
     <aside className="host-panel host-setup-edit">
       <div className="stage-block">
         <div className="panel-topline">
           <div>
-            <p className="section-kicker">Setup/Edit</p>
+            <p className="section-kicker">Room info</p>
             <h3>Room code</h3>
           </div>
         </div>
@@ -47,6 +43,15 @@ export function HostSetupPanel(props: HostSetupPanelProps) {
           <p className="muted-text">Leaders can enter mid-game with this room code and their team code.</p>
         </div>
 
+      </div>
+
+      <div className="stage-block joined-teams-panel">
+        <div className="panel-topline">
+          <div>
+            <p className="section-kicker">Teams joined</p>
+            <h3>Ready in the room</h3>
+          </div>
+        </div>
         <div className="team-code-list">
           {props.teams.map((team, index) => (
             <TeamCodeRow key={team.id} team={team} index={index} />
@@ -56,9 +61,6 @@ export function HostSetupPanel(props: HostSetupPanelProps) {
 
       <div className="stage-block">
         <p className="section-kicker">Show controls</p>
-        <div className="mini-leaderboard">
-          <AnimatedLeaderboard teams={props.sortedTeams} maxScore={maxScore} compact />
-        </div>
         <a className="ghost-btn wide-btn" href={props.leaderboardUrl} target="_blank" rel="noreferrer">
           <Trophy size={18} />
           Show leaderboard
@@ -96,8 +98,9 @@ function TeamCodeRow(props: { team: Team; index: number }) {
       />
       <div>
         <strong>{props.team.name}</strong>
-        <span>{props.team.leader_code}</span>
+        <span>{props.team.joined_at ? "Leader connected" : "Waiting to join"}</span>
       </div>
+      <i className={props.team.joined_at ? "team-connection is-connected" : "team-connection"} aria-label={props.team.joined_at ? "Leader connected" : "Leader not connected"} />
     </div>
   );
 }
