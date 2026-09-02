@@ -68,7 +68,7 @@ export function QuizLeaderPanel({
       </section>
 
       <div className="answer-option-grid">
-        {question.options.map((option) => {
+        {question.options.map((option, optionIndex) => {
           const selected = leaderAnswer?.answer === option;
           const pending = pendingAnswerKey === `${round.id}:${questionIndex}:${option}`;
           const correct = revealed && option === round.correct_answer;
@@ -83,6 +83,7 @@ export function QuizLeaderPanel({
               disabled={!canAnswer || Boolean(pendingAnswerKey)}
               whileTap={{ scale: canAnswer ? 0.97 : 1 }}
             >
+              <b className="leader-answer-key" aria-hidden="true">{String.fromCharCode(65 + optionIndex)}</b>
               <strong>{option}</strong>
               {selected && !revealed && <span>Locked in</span>}
               {correct && <span>Correct answer</span>}

@@ -19,6 +19,11 @@ export function ProjectorStage(props: ProjectorStageProps) {
   if (isRapidQuizRound(activeRound) && activeRound.status !== "reveal" && activeRound.status !== "lobby") return <QuizShowStage {...props} round={activeRound} />;
   if (activeRound.status === "reveal" || activeRound.status === "lobby") return <RoundRevealStage round={activeRound} />;
   if (activeRound.status === "locked") return <LockedStage round={activeRound} targetTeam={props.targetTeam} rivalTeam={props.rivalTeam} />;
+  if (
+    activeRound.status === "scoring" &&
+    (activeRound.round_type === "voting" || activeRound.round_type === "steal") &&
+    !activeRound.challenge_resolved_at
+  ) return <MatchupLiveStage {...props} round={activeRound} />;
   if (activeRound.status === "scoring") return <ScoringStage />;
   return <LiveRoundStage {...props} round={activeRound} />;
 }
@@ -44,7 +49,14 @@ function LiveRoundStage(props: ProjectorStageProps & { round: RoundRecord }) {
 }
 
 function LockedStage({ round, targetTeam, rivalTeam }: { round: RoundRecord; targetTeam: Team | null; rivalTeam: Team | null }) {
-  return <ShowFrame state="Locked" className="show-stage-locked"><motion.div className="show-stage-centered" initial={{ opacity: 0, scale: .97 }} animate={{ opacity: 1, scale: 1 }}><p className="show-badge"><Lock size={16} /> Answers locked</p><h2>Time&apos;s up</h2><p>{round.round_type === "voting" || round.round_type === "steal" ? "The matchup is being set." : "Waiting for the host."}</p><Matchup targetTeam={targetTeam} rivalTeam={rivalTeam} allTeamsText={round.challenge} /></motion.div></ShowFrame>;
+  const isTimedInput = round.round_type === "voting" || round.round_type === "steal" || Boolean(round.question_set?.length);
+  const matchupReady = Boolean(targetTeam && rivalTeam);
+  return <ShowFrame state="Locked" className="show-stage-locked"><motion.div className="show-stage-centered" initial={{ opacity: 0, scale: .97 }} animate={{ opacity: 1, scale: 1 }}><p className="show-badge"><Lock size={16} /> {matchupReady ? "Matchup set" : isTimedInput ? "Answers locked" : "Challenge complete"}</p><h2>{matchupReady ? "It&apos;s on" : isTimedInput ? "Time&apos;s up" : "Result locked"}</h2><p>{round.round_type === "voting" || round.round_type === "steal" ? matchupReady ? "Both teams get the same challenge." : "The matchup is being set." : "Waiting for the host to score this round."}</p><Matchup targetTeam={targetTeam} rivalTeam={rivalTeam} allTeamsText={round.challenge} /></motion.div></ShowFrame>;
+}
+
+function MatchupLiveStage(props: ProjectorStageProps & { round: RoundRecord }) {
+  const stealing = props.round.round_type === "steal";
+  return <ShowFrame state={stealing ? "Steal live" : "Showdown live"} className="show-stage-matchup"><motion.div className="show-stage-centered matchup-show" key={`${props.round.id}-${props.round.status}`} initial={{ opacity: 0, scale: .96, y: 14 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: .3 }}><p className="show-badge"><Radio size={16} /> {stealing ? "Steal challenge" : "Showdown"}</p><p className="show-round-type">{stealing ? "Win and take 5" : "Two whole teams. One winner."}</p><Matchup targetTeam={props.targetTeam} rivalTeam={props.rivalTeam} allTeamsText="" /><h2>{props.round.title}</h2><p className="show-question">{props.round.challenge}</p><p className="show-instructions">{props.round.instructions}</p><p className="show-host-run-note">{stealing ? "Pressure team wins: take 5. Rival wins: block it." : "Host confirms the winning team when the challenge is done."}</p></motion.div></ShowFrame>;
 }
 
 function ScoringStage() { return <ShowFrame state="Scoring" className="show-stage-scoring"><div className="show-stage-centered"><p className="show-badge"><Trophy size={16} /> Scoring</p><h2>Points are being awarded</h2><p>Leaderboard coming up<span className="scoring-dots" aria-hidden="true">...</span></p></div></ShowFrame>; }

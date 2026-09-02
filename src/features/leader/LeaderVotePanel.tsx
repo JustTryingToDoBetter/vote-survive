@@ -36,6 +36,7 @@ export function LeaderVotePanel({
                 style={{ "--team-color": team.color ?? "#14b8a6" } as React.CSSProperties}
                 onClick={() => submitVote(team.id)}
                 disabled={Boolean(pendingTargetId)}
+                aria-pressed={selected}
                 whileTap={{ scale: 0.97 }}
               >
                 <TeamAvatar
@@ -55,7 +56,7 @@ export function LeaderVotePanel({
       {selectedTarget && (
         <div className="submitted-banner">
           <Sparkles size={18} />
-          Vote locked. You voted for {selectedTarget.name}.
+          Vote locked — you chose {selectedTarget.name}.
         </div>
       )}
 

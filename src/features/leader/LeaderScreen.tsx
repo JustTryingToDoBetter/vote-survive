@@ -84,14 +84,6 @@ export function LeaderScreen(props: LeaderScreenProps) {
 
       {props.activeRound && (
         <section className="leader-stage leader-vote-card">
-          <PlayerTaskPanel
-            round={props.activeRound}
-            voteOpen={voteOpen}
-            answerOpen={answerOpen}
-            quizOpen={quizOpen}
-            secondsLeft={props.secondsLeft}
-          />
-
           {quizOpen && props.activeRound ? (
             <QuizLeaderPanel
               round={props.activeRound}
@@ -100,14 +92,23 @@ export function LeaderScreen(props: LeaderScreenProps) {
               pendingAnswerKey={props.pendingAnswerKey}
               submitAnswer={props.submitAnswer}
             />
-          ) : answerOpen ? (
+          ) : (
+            <>
+              <PlayerTaskPanel
+                round={props.activeRound}
+                voteOpen={voteOpen}
+                answerOpen={answerOpen}
+                quizOpen={false}
+                secondsLeft={props.secondsLeft}
+              />
+              {answerOpen ? (
             <LeaderAnswerPanel
               round={props.activeRound}
               leaderAnswer={props.leaderAnswer}
               submitAnswer={props.submitAnswer}
               pendingAnswerKey={props.pendingAnswerKey}
             />
-          ) : voteOpen ? (
+              ) : voteOpen ? (
             <LeaderVotePanel
               round={props.activeRound}
               teams={props.teams}
@@ -116,7 +117,7 @@ export function LeaderScreen(props: LeaderScreenProps) {
               submitVote={props.submitVote}
               pendingTargetId={props.pendingVoteTargetId}
             />
-          ) : (
+              ) : (
             <div className="challenge-preview">
               <p className="section-kicker">
                 {props.activeRound.status === "reveal" || props.activeRound.status === "lobby"
@@ -132,6 +133,8 @@ export function LeaderScreen(props: LeaderScreenProps) {
               </h3>
               {props.leaderVoteTarget && <p>You voted for {props.leaderVoteTarget.name}.</p>}
             </div>
+              )}
+            </>
           )}
         </section>
       )}

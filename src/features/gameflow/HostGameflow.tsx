@@ -36,12 +36,16 @@ export function HostGameflow({
   const phase = getHostPhase(room, activeRound, showWinner);
   const phaseIndex = hostPhaseOrder.indexOf(phase);
   const primaryLabel =
-    phase === "voting"
+    phase === "lobby"
+      ? "Start random"
+      : phase === "leaderboard"
+      ? activeRound?.is_final
+        ? "Reveal Winner"
+        : "Start random"
+      : phase === "voting"
       ? activeRound?.status === "voting"
         ? "Lock Votes"
         : "Lock Task"
-      : phase === "leaderboard" && activeRound?.is_final
-      ? "Reveal Winner"
       : phase === "final_reveal"
       ? activeRound?.status === "winner" || room.status === "winner"
         ? "Reset"

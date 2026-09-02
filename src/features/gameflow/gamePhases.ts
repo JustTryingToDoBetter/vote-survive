@@ -96,6 +96,13 @@ export function getProjectorState(
   if (activeRound.status === "voting") return "Voting open";
   if (activeRound.status === "live") return "Task live";
   if (activeRound.status === "locked") return "Votes locked";
+  if (
+    activeRound.status === "scoring" &&
+    (activeRound.round_type === "voting" || activeRound.round_type === "steal") &&
+    !activeRound.challenge_resolved_at
+  ) {
+    return activeRound.round_type === "steal" ? "Steal live" : "Showdown live";
+  }
   if (activeRound.status === "scoring") return "Scoring";
   if (activeRound.status === "complete") return "Leaderboard";
   return "Round starting";

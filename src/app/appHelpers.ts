@@ -37,6 +37,22 @@ function isChallengeConfig(value: unknown): value is ChallengeConfig {
 export const HOST_SESSION_KEY = "vote-survive-host-session";
 export const LEADER_SESSION_KEY = "vote-survive-leader-session";
 
+/** Accept both the shared-link form (/game/ABCDE) and the older query form. */
+export function getRoomCodeFromLocation(pathname: string, search: string) {
+  const queryCode = new URLSearchParams(search).get("room")?.trim();
+  if (queryCode) return queryCode.toUpperCase();
+
+  const segments = pathname.split("/").filter(Boolean);
+  const route = segments[0]?.toLowerCase();
+  const code = segments[1]?.trim();
+
+  if ((route === "game" || route === "audience" || route === "leaderboard" || route === "join") && code) {
+    return code.toUpperCase();
+  }
+
+  return "";
+}
+
 export function generateCode(length = 5) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const values = new Uint32Array(length);

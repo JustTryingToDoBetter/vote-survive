@@ -17,7 +17,7 @@ export function LeaderAnswerPanel({
   return (
     <>
       <div className="answer-option-grid">
-        {(round.answer_options ?? []).map((option) => (
+        {(round.answer_options ?? []).map((option, index) => (
           <motion.button
             key={option}
             className={`answer-option ${leaderAnswer?.answer === option ? "is-selected" : ""}`}
@@ -25,6 +25,7 @@ export function LeaderAnswerPanel({
             disabled={Boolean(pendingAnswerKey)}
             whileTap={{ scale: 0.97 }}
           >
+            <b className="leader-answer-key" aria-hidden="true">{String.fromCharCode(65 + index)}</b>
             <strong>{option}</strong>
             {leaderAnswer?.answer === option && <span>Locked in</span>}
             {pendingAnswerKey?.endsWith(`:${option}`) && <span>Sending...</span>}

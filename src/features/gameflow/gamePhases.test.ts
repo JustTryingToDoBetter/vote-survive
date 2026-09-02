@@ -50,7 +50,14 @@ describe("gamePhases", () => {
     expect(getProjectorState(room(), round("voting"), false)).toBe("Voting open");
     expect(getProjectorState(room(), round("live"), false)).toBe("Task live");
     expect(getProjectorState(room(), round("locked"), false)).toBe("Votes locked");
-    expect(getProjectorState(room(), round("scoring"), false)).toBe("Scoring");
+    expect(getProjectorState(room(), round("scoring"), false)).toBe("Showdown live");
+    expect(
+      getProjectorState(
+        room(),
+        { ...round("scoring"), challenge_resolved_at: "2026-09-01T00:01:00.000Z" },
+        false
+      )
+    ).toBe("Scoring");
     expect(getProjectorState(room(), round("complete"), false)).toBe("Leaderboard");
     expect(getProjectorState(room("winner"), round("complete"), false)).toBe(
       "Winner reveal"

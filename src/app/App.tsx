@@ -24,6 +24,7 @@ import { useGameActions } from "../hooks/useGameActions";
 import { useQuizActions } from "../hooks/useQuizActions";
 import { useRoomSession } from "../hooks/useRoomSession";
 import { useSoundEffects } from "../hooks/useSoundEffects";
+import { getRoomCodeFromLocation } from "./appHelpers";
 import type {
   AnswerSubmission,
   AppMode,
@@ -44,7 +45,7 @@ export default function App() {
   const sound = useSoundEffects();
   const initialRoomCode =
     typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("room")?.toUpperCase() ?? ""
+      ? getRoomCodeFromLocation(window.location.pathname, window.location.search)
       : "";
   const initialPath: AppMode =
     typeof window !== "undefined" && window.location.pathname.startsWith("/join")
