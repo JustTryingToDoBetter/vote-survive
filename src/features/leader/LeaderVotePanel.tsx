@@ -55,12 +55,12 @@ export function LeaderVotePanel({
       {selectedTarget && (
         <div className="submitted-banner">
           <Sparkles size={18} />
-          Vote locked in for {selectedTarget.name}. You can change it before the host locks.
+          Vote locked. You voted for {selectedTarget.name}.
         </div>
       )}
 
       <div className="leader-bottom-action">
-        <strong>{selectedTarget ? `Voting for ${selectedTarget.name}` : "Choose a pressure team"}</strong>
+        <strong>{selectedTarget ? "Vote locked" : "Who should your team face?"}</strong>
         <span>{round.prompt}</span>
       </div>
     </>

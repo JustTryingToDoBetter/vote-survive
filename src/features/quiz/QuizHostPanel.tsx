@@ -1,4 +1,4 @@
-import { Check, Eye, FastForward, Lock, Play, TimerReset, Trophy } from "lucide-react";
+import { Check, Eye, FastForward, Lock, TimerReset, Trophy } from "lucide-react";
 import type { AnswerSubmission, RoundRecord, Team } from "../../lib/types";
 import {
   formatQuizCategory,
@@ -14,7 +14,6 @@ type QuizHostPanelProps = {
   teams: Team[];
   submissions: AnswerSubmission[];
   secondsLeft: number;
-  startQuestion: () => void;
   lockQuestion: () => void;
   revealAnswer: () => void;
   nextQuestion: () => void;
@@ -58,14 +57,6 @@ export function QuizHostPanel(props: QuizHostPanelProps) {
           )}
         </div>
         <div className="quiz-command-row">
-          <button
-            className="primary-btn"
-            onClick={props.startQuestion}
-            disabled={status !== "waiting"}
-          >
-            <Play size={18} />
-            Start Question
-          </button>
           <button
             className="ghost-btn"
             onClick={props.lockQuestion}

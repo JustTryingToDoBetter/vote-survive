@@ -132,3 +132,13 @@ export function formatQuizCategory(category: QuizCategory | undefined) {
 export function isLastQuizQuestion(round: RoundRecord) {
   return (round.current_question_index ?? 0) >= (round.question_set?.length ?? 1) - 1;
 }
+
+/** True only for the persisted recovery/creation state that should enter live play. */
+export function shouldAutoStartQuizQuestion(round: RoundRecord | null | undefined) {
+  return Boolean(
+    isRapidQuizRound(round) &&
+      round?.status === "live" &&
+      round.question_status === "waiting" &&
+      getCurrentQuestion(round)
+  );
+}

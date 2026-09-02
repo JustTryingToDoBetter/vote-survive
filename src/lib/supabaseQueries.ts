@@ -119,18 +119,24 @@ export async function fetchScores(roomId: string) {
     .from("score_events")
     .select(scoreColumns)
     .eq("room_id", roomId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(1);
 
   if (error) throw error;
   return (data ?? []) as ScoreEvent[];
 }
 
 export async function fetchBootstrapRoomState(roomId: string) {
+  const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
   const { data, error } = await supabase.rpc("bootstrap_room_state", {
     p_room_id: roomId,
   });
 
   if (error) throw error;
+
+  if (import.meta.env.DEV && typeof performance !== "undefined") {
+    console.info(`[perf] bootstrap room: ${Math.round(performance.now() - startedAt)}ms`);
+  }
 
   const payload = (data ?? {}) as {
     room?: Room | null;

@@ -33,8 +33,8 @@ export function LeaderAnswerPanel({
       </div>
 
       <div className="leader-bottom-action">
-        <strong>{leaderAnswer ? `Answer locked: ${leaderAnswer.answer}` : "Pick your answer"}</strong>
-        <span>The host sees answer order and correctness for scoring.</span>
+        <strong>{leaderAnswer ? "Answer locked" : "Pick your answer"}</strong>
+        <span>{leaderAnswer ? `You chose: ${leaderAnswer.answer}. Wait for the reveal.` : "Choose one answer for your team."}</span>
       </div>
     </>
   );

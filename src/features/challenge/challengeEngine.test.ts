@@ -19,6 +19,16 @@ function team(id: string, score: number): Team {
 }
 
 describe("challengeEngine", () => {
+  it("keeps the four active concepts on simple supported configurations", () => {
+    const challenge = challengeConfigForRoundType("all_play");
+    const showdown = challengeConfigForRoundType("voting");
+    const final = challengeConfigForRoundType("final_double");
+
+    expect(challenge).toMatchObject({ participantMode: "all_teams", matchupRule: "none", scoringMode: "manual" });
+    expect(showdown).toMatchObject({ participantMode: "head_to_head", participantCount: 2, matchupRule: "vote_runner_up", scoringMode: "winner_points", winnerPoints: 10, runnerUpPoints: 5 });
+    expect(final).toMatchObject({ participantMode: "all_teams", matchupRule: "none", scoringMode: "manual" });
+  });
+
   it("defines steal rounds as one atomic 5-point head-to-head steal", () => {
     const config = challengeConfigForRoundType("steal");
 

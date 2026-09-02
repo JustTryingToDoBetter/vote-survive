@@ -10,6 +10,7 @@ import {
   getQuizSecondsLeft,
   isLastQuizQuestion,
   isQuizTimerExpired,
+  shouldAutoStartQuizQuestion,
   toPublicQuizQuestion,
 } from "./quizEngine";
 
@@ -225,5 +226,12 @@ describe("quizEngine", () => {
   it("detects the final quiz question", () => {
     expect(isLastQuizQuestion(makeRound({ current_question_index: 0 }))).toBe(false);
     expect(isLastQuizQuestion(makeRound({ current_question_index: 1 }))).toBe(true);
+  });
+
+  it("only auto-starts a valid waiting question in a live question round", () => {
+    expect(shouldAutoStartQuizQuestion(makeRound({ question_status: "waiting", status: "live" }))).toBe(true);
+    expect(shouldAutoStartQuizQuestion(makeRound({ question_status: "live", status: "live" }))).toBe(false);
+    expect(shouldAutoStartQuizQuestion(makeRound({ question_status: "waiting", status: "reveal" }))).toBe(false);
+    expect(shouldAutoStartQuizQuestion(makeRound({ question_set: null, question_status: "waiting", status: "live" }))).toBe(false);
   });
 });

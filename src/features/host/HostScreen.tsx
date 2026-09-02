@@ -131,7 +131,7 @@ export function HostScreen(props: HostScreenProps) {
           </button>
           <button className="primary-btn" onClick={() => props.startRound()} disabled={!canStartRound}>
             <Sparkles size={18} />
-            Random round
+            Start random
           </button>
           <a className="ghost-btn" href={gameUrl} target="_blank" rel="noreferrer">
             <Eye size={18} />

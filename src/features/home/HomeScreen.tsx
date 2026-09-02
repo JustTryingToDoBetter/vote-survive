@@ -27,8 +27,8 @@ export function HomeScreen(props: HomeScreenProps) {
           <span className="eyebrow">Live youth game platform</span>
           <h1>Bright, loud, phone-first fun for your next team night.</h1>
           <p>
-            Create a room, launch voting or all-play rounds,
-            score fast, and reveal a dramatic winner on the big screen.
+            Run a fast, whole-team game night: launch rounds, score fast,
+            and reveal the winner on the big screen.
           </p>
 
           <div className="hero-actions">
@@ -50,7 +50,7 @@ export function HomeScreen(props: HomeScreenProps) {
         >
           <p className="section-kicker">Leader Join</p>
           <h2>Join from your phone</h2>
-          <p>Scan the QR from the host or enter your room and team code.</p>
+          <p>Enter the room code from the host, then your team's code.</p>
 
           <div className="join-form">
             <label>
@@ -77,10 +77,7 @@ export function HomeScreen(props: HomeScreenProps) {
               <button onClick={props.joinAsLeader} disabled={props.isLoading}>
                 {props.isLoading ? "Joining..." : "Join Team"}
               </button>
-              <button className="secondary-btn" type="button" aria-label="Scan QR code">
-                <QrCode size={18} />
-                Scan QR
-              </button>
+              <span className="join-help"><QrCode size={16} /> Scan the host QR if it is on screen.</span>
             </div>
           </div>
 

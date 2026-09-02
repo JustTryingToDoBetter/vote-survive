@@ -4,19 +4,29 @@ import type {
   RoundDefinition,
   RoundType,
 } from "../lib/types";
+import { teamChallenges } from "./teamChallenges";
 
 
 // ---------------------------------------------------------------------------
 // ALL-PLAY CHALLENGES
 // ---------------------------------------------------------------------------
 
-const allPlayChallenges = [
+export const legacyAllPlayChallenges = [
+  // Physical / Energy
   "Run back-to-back 2v2 freeze battles. Each duo builds a Bible scene using only body poses.",
+  "Create two 2v2 matchups. Each pair has 30 seconds to make a slogan and deliver it loud.",
   "All teams at the same time: 30 seconds to come up with a team handshake and perform it perfectly.",
   "Each team has 45 seconds to build a human sculpture that represents one of the Fruits of the Spirit.",
+  "2v2 charades: Act out a Bible miracle without speaking. Rival team has 20 seconds to guess.",
   "Every team performs a 15-second hype intro for themselves — crowd energy judged by the host.",
+  "One person from each team mimes a Bible character. Their team shouts guesses. First to 3 correct wins.",
+
+  // Creative / Speaking
   "Each team has 30 seconds to write and deliver a one-line rap about their team animal.",
   "Teams compete to create the best 30-second motivational speech using only three words: Coffee, Gym, and Jesus",
+
+
+  // Knowledge / Speed
   "All teams race to name as many books of the Bible as possible in 30 seconds. Host counts, top total wins.",
   "4-team simultaneous quiz: Host reads a question, first team to stand wins the point. 5 questions, fast fire.",
   "Name chain: Teams take turns — each team must name a Bible character whose name starts with the last letter of the previous answer.",
@@ -29,37 +39,17 @@ const allPlayChallenges = [
   "Choir chaos: teams have 20 seconds to turn their team name into a worship-conference-style chant.",
   "Reverse charades: the whole team acts while the leader guesses the Bible character.",
   "Emoji testimony: teams describe a Bible story using only faces, gestures, and dramatic pointing.",
+  "Awkward handshake altar call: invent the most complicated team handshake that still looks clean.",
   "Speed compliment battle: teams have 20 seconds to hype another team without repeating any adjective.",
   "Lost announcement challenge: each team announces a missing sandal like it is the most important news of the night.",
   "One-word sermon relay: each person adds exactly one word to build a dramatic sentence about courage.",
 ];
 
-const votingPrompts = [
-  "Let the room pick the pressure team.",
-  "Choose the team that has to make the big call.",
-  "Who is walking into the spotlight tonight?",
-  "The vote decides who faces the pressure.",
-  "Pick the target team before the challenge is revealed.",
-  "The room decides which team takes the risk.",
-  "Vote for the pressure matchup.",
-  "Name the team under the spotlight.",
-];
-
-const votingChallenges = [
-  "Every team nominates one leader to defend their side in the final vote.",
-  "The pressure team must answer a Bible question before the timer ends.",
-  "The target team picks the challenge category and the room votes the winner.",
-  "The vote decides who faces the one-on-one pressure round tonight.",
-  "The team with the loudest room energy earns the challenge spotlight.",
-  "The pressure team gets one final chance to claim the room's attention.",
-];
-
-const allPlayPrompts = [
-  "Everyone joins in on the same challenge at once.",
-  "This is full-room chaos with no voting required.",
-  "All teams hit the challenge together and stack up their score.",
-  "Every team is in the spotlight, all at once.",
-  "The room explodes into one shared challenge moment.",
+export const legacyAllPlayPrompts = [
+  "Every team is live. Everybody has a job.",
+  "All teams compete at the same time — nobody sits this one out.",
+  "Whole-team challenge: work together, rotate, and finish first.",
+  "The entire room is playing. Every eligible teammate contributes.",
 ];
 
 const quizBurstPrompts = [
@@ -79,19 +69,33 @@ const bibleSpeedPrompts = [
 ];
 
 const twists = [
-  "The host can double the points if the room is loud enough.",
-  "Flip the challenge categories at the last second.",
-  "The pressure team picks the rule twist before the round starts.",
-  "This round gets a surprise twist from the host bench.",
-  "A bonus rule changes the whole feel of the final moment.",
+  "Rotation rule: no teammate may take a second turn until everyone on the eligible team has participated.",
+  "Whole-team rule: every eligible teammate must contribute before anyone repeats.",
 ];
 
-const finalChallenges = [
-  "Final countdown: every score is doubled and the room is watching every move.",
-  "This is the biggest moment of the night — no safe plays, only bold choices.",
-  "The final challenge decides the winner in one unforgettable push.",
-  "One last showdown turns the entire room into a live final.",
-];
+const showdownChallengeIds = new Set([
+  "bible-book-chain",
+  "bible-hunt-relay",
+  "event-order",
+  "memory-table",
+  "silent-line",
+  "category-blitz",
+  "verse-puzzle",
+]);
+
+const finalChallengeIds = new Set([
+  "bible-hunt-relay",
+  "category-blitz",
+  "event-order",
+  "team-code",
+]);
+
+const activeShowdownChallenges = teamChallenges.filter((challenge) =>
+  showdownChallengeIds.has(challenge.id)
+);
+const activeFinalChallenges = teamChallenges.filter((challenge) =>
+  finalChallengeIds.has(challenge.id)
+);
 
 // ---------------------------------------------------------------------------
 // QUIZ BURST QUESTIONS
@@ -109,7 +113,7 @@ export const legacyBibleQuestions = [
   "In which garden did Adam and Eve sin?",
   "How many days and nights did it rain during Noah's flood?",
   "Who was thrown into the lions' den?",
-  "What did God create on the seventh day?",
+  "What did God do on the seventh day of creation?",
   "Who were Jacob's twelve sons the ancestors of?",
   "What weapon did Samson use to defeat the Philistines?",
   "Who was Moses' brother?",
@@ -137,7 +141,7 @@ export const legacyBibleQuestions = [
   "What sea did Jesus walk on?",
   "Who was the tax collector Jesus called to follow Him?",
   "What did Jesus feed 5000 people with?",
-  "Who was the first person to see Jesus after the resurrection?",
+  "According to John 20, who first saw the risen Jesus?",
 
   // Medium — New Testament
   "Name the two prisoners released or kept at Passover — which did the crowd choose?",
@@ -152,7 +156,7 @@ export const legacyBibleQuestions = [
   "Name the fruit of the Spirit — all nine.",
 
   // Hard / Bonus
-  "Quote John 3:16 word for word.",
+  "What is the main message of John 3:16?",
   "What are the four Gospels in order?",
   "Which prophet said 'For I know the plans I have for you'?",
   "In Revelation, what are the seven churches of Asia listed?",
@@ -436,7 +440,7 @@ export const legacyBibleSpeedChallenges = [
 // STEAL ROUND PROMPTS
 // ---------------------------------------------------------------------------
 
-const stealChallenges = [
+export const legacyStealChallenges = [
   "KINGSLAYER: The pressure team challenges the team in 1st place. Win one sudden-death challenge and steal 8 points. Lose and the leaders steal 3 from you.",
 
   "THE HEIST: Pick any rival team and announce how many points you want to steal: 3, 5, or 8. The higher the steal, the harder the host makes the challenge. Fail and you pay half the attempted steal.",
@@ -510,6 +514,34 @@ const stealChallenges = [
   "FINAL BOSS: The lowest-ranked team challenges the current leader. The trailing team chooses the challenge category. The leader chooses who represents each team. Winner steals 10.",
 ];
 
+const stealChallenges = [
+  {
+    title: "Bible Hunt Raid",
+    description: "Find four Bible references as a relay.",
+    instructions: "Give both teams the same four references. Each teammate finds one before tagging the next player. First correct finish wins.",
+  },
+  {
+    title: "Code Break",
+    description: "Solve clues and combine the answers into one final code.",
+    instructions: "Give both teams the same clue set. Teams split the clues between members, combine the answers, and submit one final code. First complete correct code wins.",
+  },
+  {
+    title: "Category Blitz",
+    description: "Name as many valid answers from one Bible category as possible.",
+    instructions: "Give both teams the same category and 30 seconds. Teammates rotate answers. Do not count repeats or invalid answers; highest valid total wins.",
+  },
+  {
+    title: "Verse Vault",
+    description: "Rebuild a scrambled verse and name its reference.",
+    instructions: "Give both teams the same verse pieces. Everyone helps arrange or check a piece. First correct verse and reference wins.",
+  },
+  {
+    title: "Memory Raid",
+    description: "Remember the most items from a board.",
+    instructions: "Show both teams the same board for 15 seconds, then hide it. Each teammate contributes to one team list. Count only correct items.",
+  },
+];
+
 // ---------------------------------------------------------------------------
 // HELPER
 // ---------------------------------------------------------------------------
@@ -557,58 +589,56 @@ export function buildQuizQuestionSet(roundType: RoundType, count = 5): QuizQuest
 // ---------------------------------------------------------------------------
 
 export const roundTypeLabels: Record<RoundType, string> = {
-  voting: "Voting Round",
-  all_play: "All-Play Challenge",
+  voting: "Showdown",
+  all_play: "Challenge",
   quiz_burst: "Quiz Burst",
-  bible_speed: "Bible Speed Round",
+  bible_speed: "Bible Speed",
   dance_battle: "Dance Battle",
-  steal: "Steal Round",
-  final_double: "Final Double Points",
+  steal: "Steal",
+  final_double: "Final",
 };
+
+export const playableRoundTypes = [
+  "all_play",
+  "voting",
+  "steal",
+  "final_double",
+] as const satisfies readonly RoundType[];
 
 // ---------------------------------------------------------------------------
 // PUBLIC ENTRY POINT
 // ---------------------------------------------------------------------------
 
 export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
-  const type =
-    roundType ??
-    pickRandom<RoundType>([
-      "voting",
-      "all_play",
-      "quiz_burst",
-      "bible_speed",
-      "dance_battle",
-      "steal",
-    ]);
+  const type = roundType ?? pickRandom<RoundType>(["all_play", "voting", "steal"]);
 
   switch (type) {
     case "voting":
+      {
+        const selectedChallenge = pickRandom(activeShowdownChallenges);
       return {
         type,
-        title: "Pressure Duel Vote",
-        prompt: pickRandom(votingPrompts),
-        challenge: pickRandom(votingChallenges),
-        instructions:
-          "Leaders vote from their phones. Once locked, reveal the pressure team and match them into a direct duel.",
-        scoringGuide:
-          "Use winner and runner-up scoring for the duel, then give participation or bonus points to the rest.",
-        twist: pickRandom(twists),
+        title: selectedChallenge.title,
+        prompt: "Two whole teams. One winner.",
+        challenge: selectedChallenge.description,
+        instructions: selectedChallenge.instructions,
+        scoringGuide: "Winner +10. Other team +5.",
         requiresVoting: true,
       };
+      }
 
-    case "all_play":
+    case "all_play": {
+      const selectedChallenge = pickRandom(teamChallenges);
       return {
         type,
-        title: "Tag-Team Clash",
-        prompt: pickRandom(allPlayPrompts),
-        challenge: pickRandom(allPlayChallenges),
-        instructions:
-          "No voting. Pair teams into two 2v2 battles or run one featured 2v2 showdown at a time.",
-        scoringGuide:
-          "Score the winning duo high, the other duo as runner-up or effort, then add custom bonuses if needed.",
+        title: selectedChallenge.title,
+        prompt: "All teams are in.",
+        challenge: selectedChallenge.description,
+        instructions: selectedChallenge.instructions,
+        scoringGuide: "Host scores teams using the standard score controls.",
         requiresVoting: false,
       };
+    }
 
     case "quiz_burst": {
       const questionSet = buildQuizQuestionSet(type);
@@ -653,59 +683,37 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
       };
     }
 
-    case "dance_battle":
-      return {
-        type,
-        title: "Dance Battle",
-        prompt: "Bring the room energy and turn the floor into a showpiece.",
-        challenge: "Two teams hit the floor with a 30-second dance showdown judged on energy, timing, and confidence.",
-        instructions:
-          "Pick two teams, give them a rhythm cue, and let the crowd vote for who owned the moment.",
-        scoringGuide:
-          "The winner takes the full win points. Runner-up gets a smaller bonus for the energy and creativity shown.",
-        requiresVoting: false,
-      };
-
     case "steal":
+      {
+        const selectedChallenge = pickRandom(stealChallenges);
       return {
         type,
-        title: "Steal Duel",
-        prompt: "One 1v1 battle can swing the entire room.",
-        challenge: pickRandom(stealChallenges),
-        instructions:
-          "Use voting first to pick the pressure team, then match them against one rival for the steal attempt.",
+        title: selectedChallenge.title,
+        prompt: "Win and take 5.",
+        challenge: selectedChallenge.description,
+        instructions: selectedChallenge.instructions,
         scoringGuide:
-          "Award normal winner and runner-up points, then use a custom score if you want to add the steal bonus.",
+          "Pressure-team win steals up to 5 points from the rival. Rival win blocks the steal.",
         requiresVoting: true,
       };
+      }
 
     case "final_double":
+      {
+        const selectedChallenge = pickRandom(activeFinalChallenges);
       return {
         type,
-        title: "Final Round",
-        prompt: "Everything counts double now. This is where legends are made.",
-        challenge: pickRandom(finalChallenges),
-        instructions:
-          "Host launches the final round, chooses the final matchups, scores every team, then reveals the winner.",
+        title: selectedChallenge.title,
+        prompt: "Everyone plays. Every point counts double.",
+        challenge: selectedChallenge.description,
+        instructions: selectedChallenge.instructions,
         scoringGuide:
-          "Every score action is doubled automatically in the final round. No holding back.",
-        twist: pickRandom(twists),
+          "Use normal host scoring. All score changes are doubled automatically.",
         requiresVoting: false,
         isFinal: true,
       };
-
+      }
     default:
-      return {
-        type: "voting",
-        title: "Pressure Duel Vote",
-        prompt: pickRandom(votingPrompts),
-        challenge: pickRandom(votingChallenges),
-        instructions:
-          "Leaders vote from their phones. Once locked, reveal the pressure team and match them into a direct duel.",
-        scoringGuide:
-          "Use winner and runner-up scoring for the duel, then give participation or bonus points to the rest.",
-        twist: pickRandom(twists),
-        requiresVoting: true,
-      };
+      return buildRoundDefinition("voting");
   }
 }

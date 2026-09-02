@@ -65,16 +65,31 @@ export function useQuizActions({
     }
   }
 
-  function startQuestion() {
-    if (!activeRound || (activeRound.question_status ?? "waiting") !== "waiting") return;
-    void updateRound(
-      {
-        question_status: "live",
-        correct_answer: null,
-        question_started_at: new Date().toISOString(),
-      },
-      "start"
-    );
+  async function startQuestion() {
+    if (!activeRound || (activeRound.question_status ?? "waiting") !== "waiting") return false;
+    if (pendingQuizAction) return false;
+
+    setPendingQuizAction("start");
+    setLoadError(null);
+    try {
+      const { data, error } = await getHostSupabase().rpc("host_start_quiz_question", {
+        p_round_id: activeRound.id,
+        p_question_index: getCurrentQuestionIndex(activeRound),
+      });
+      if (error || !data) throw error ?? new Error("Unable to start question.");
+
+      const updatedRound = toRoundRecord(data as Record<string, unknown>);
+      setActiveRound(updatedRound);
+      setRounds((current) =>
+        current.map((round) => (round.id === updatedRound.id ? updatedRound : round))
+      );
+      return true;
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to start question.");
+      return false;
+    } finally {
+      setPendingQuizAction(null);
+    }
   }
 
   async function lockQuestion() {
@@ -121,23 +136,35 @@ export function useQuizActions({
     }
   }
 
-  function nextQuestion() {
+  async function nextQuestion() {
     if (
       !activeRound ||
       activeRound.question_status !== "scored" ||
       isLastQuizQuestion(activeRound)
     ) {
-      return;
+      return false;
     }
-    void updateRound(
-      {
-        current_question_index: getCurrentQuestionIndex(activeRound) + 1,
-        question_status: "waiting",
-        correct_answer: null,
-        question_started_at: null,
-      },
-      "next"
-    );
+    if (pendingQuizAction) return false;
+
+    setPendingQuizAction("next");
+    setLoadError(null);
+    try {
+      const { data, error } = await getHostSupabase().rpc("host_advance_quiz_question", {
+        p_round_id: activeRound.id,
+      });
+      if (error || !data) throw error ?? new Error("Unable to start next question.");
+      const updatedRound = toRoundRecord(data as Record<string, unknown>);
+      setActiveRound(updatedRound);
+      setRounds((current) =>
+        current.map((round) => (round.id === updatedRound.id ? updatedRound : round))
+      );
+      return true;
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to start next question.");
+      return false;
+    } finally {
+      setPendingQuizAction(null);
+    }
   }
 
   function endQuizRound() {

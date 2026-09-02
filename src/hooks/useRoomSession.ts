@@ -98,6 +98,7 @@ export function useRoomSession({
   });
   const refreshSequenceRef = useRef(0);
   const refreshTimerRef = useRef<number | null>(null);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
 
   const markSynced = useCallback((startedAt: number) => {
     setSyncState({
@@ -185,7 +186,10 @@ export function useRoomSession({
   );
 
   const refreshRoomData = useCallback(
-    async (roomId: string) => {
+    (roomId: string) => {
+      if (refreshInFlightRef.current) return refreshInFlightRef.current;
+
+      const run = async () => {
       const requestId = refreshSequenceRef.current + 1;
       refreshSequenceRef.current = requestId;
       const startedAt = performance.now();
@@ -210,6 +214,8 @@ export function useRoomSession({
           return;
         }
 
+        // Compatibility recovery only. Normal initialization and polling use the
+        // compact bootstrap RPC above.
         const [roomRow, teamRows, roundRows] = await Promise.all([
           fetchRoom(roomId),
           fetchTeams(roomId),
@@ -237,6 +243,15 @@ export function useRoomSession({
           error instanceof Error ? error.message : "Unable to refresh room right now."
         );
       }
+      };
+
+      const request = run().finally(() => {
+        if (refreshInFlightRef.current === request) {
+          refreshInFlightRef.current = null;
+        }
+      });
+      refreshInFlightRef.current = request;
+      return request;
     },
     [markSynced]
   );
@@ -326,18 +341,22 @@ export function useRoomSession({
                 joined_at: string | null;
                 expires_at: string;
               };
-              const foundRoom = await fetchRoom(restoredSession.room_id);
-              const roomTeams = await fetchTeams(foundRoom.id);
-              const foundTeam = roomTeams.find(
+              const bootstrap = await fetchBootstrapRoomState(restoredSession.room_id);
+              const foundRoom = bootstrap.room;
+              const foundTeam = bootstrap.teams.find(
                 (team: Team) => team.id === restoredSession.team_id
               );
 
-              if (!foundTeam) {
+              if (!foundRoom || !foundTeam) {
                 throw new Error("Leader team could not be restored.");
               }
 
               setRoom(foundRoom);
-              setTeams(roomTeams);
+              setTeams(bootstrap.teams);
+              setRounds(bootstrap.rounds);
+              setActiveRound(bootstrap.activeRound);
+              setVotes(bootstrap.votes);
+              setAnswerSubmissions(bootstrap.answers);
               setRoomCodeInput(foundRoom.code);
               setTeamCodeInput("");
               setLeaderTeam({
@@ -345,7 +364,6 @@ export function useRoomSession({
                 joined_at: restoredSession.joined_at ?? foundTeam.joined_at,
               });
               setMode("leader");
-              await refreshRoomData(foundRoom.id);
             } catch {
               window.localStorage.removeItem(LEADER_SESSION_KEY);
               setLeaderTeam(null);
@@ -449,7 +467,6 @@ export function useRoomSession({
       | "CHANNEL_ERROR"
   ) => {
     if (status === "SUBSCRIBED") {
-      queueRoomRefresh(roomId, 0);
       return;
     }
 
@@ -484,15 +501,10 @@ export function useRoomSession({
     return () => {
       window.clearInterval(pollTimer);
     };
-  }, [queueRoomRefresh, refreshRoomData, room?.id]);
+  }, [queueRoomRefresh, room?.id]);
 
   useEffect(() => {
     if (!activeRound?.id) return;
-
-    window.setTimeout(() => {
-      void refreshVotes(activeRound.id);
-      void refreshAnswers(activeRound.id);
-    }, 0);
 
     const channel = supabase
       .channel(`round-live-${activeRound.id}`)
@@ -544,8 +556,6 @@ export function useRoomSession({
             | "CHANNEL_ERROR"
         ) => {
           if (status === "SUBSCRIBED") {
-            void refreshVotes(activeRound.id);
-            void refreshAnswers(activeRound.id);
             return;
           }
 

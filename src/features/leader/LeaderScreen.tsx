@@ -62,8 +62,8 @@ export function LeaderScreen(props: LeaderScreenProps) {
         />
         <div>
           <p className="section-kicker">Room {props.room.code}</p>
-          <h1>You are {props.leaderTeam.name}</h1>
-          <p className="header-helper">{props.leaderTeam.animal ?? "Team"} leader phone</p>
+          <h1>{props.leaderTeam.name}</h1>
+          <p className="header-helper">{props.leaderTeam.score} points · {props.leaderTeam.animal ?? "Team"}</p>
         </div>
 
         <div className="header-actions">

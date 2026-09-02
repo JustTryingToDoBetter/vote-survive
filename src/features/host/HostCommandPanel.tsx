@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Play, Sparkles, TimerReset, Trophy, Vote } from "lucide-react";
-import { roundTypeLabels } from "../../data/gameContent";
+import { playableRoundTypes, roundTypeLabels } from "../../data/gameContent";
 import {
   formatSyncState,
   getRoundTimerSeconds,
@@ -109,7 +109,9 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
     <section className="host-panel host-run-game">
       <div className="status-strip-inline">
         <StatusPill label="Joined" value={`${joinedTeams}/${props.teams.length}`} />
-        <StatusPill label="Voting" value={`${voteProgress}%`} />
+        {isVoteRound && (
+          <StatusPill label="Voting" value={`${voteProgress}%`} />
+        )}
         <StatusPill label="Sync" value={formatSyncState(props.syncState)} />
       </div>
 
@@ -139,9 +141,9 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
                 props.setSelectedRoundType(event.target.value as RoundType)
               }
             >
-              {Object.entries(roundTypeLabels).map(([value, label]) => (
+              {playableRoundTypes.map((value) => (
                 <option key={value} value={value}>
-                  {label}
+                  {roundTypeLabels[value]}
                 </option>
               ))}
             </select>
@@ -253,7 +255,6 @@ export function HostCommandPanel(props: HostCommandPanelProps) {
             teams={props.teams}
             submissions={props.answerSubmissions}
             secondsLeft={props.secondsLeft}
-            startQuestion={props.quizActions.startQuestion}
             lockQuestion={props.quizActions.lockQuestion}
             revealAnswer={props.quizActions.revealAnswer}
             nextQuestion={props.quizActions.nextQuestion}

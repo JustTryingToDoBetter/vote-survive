@@ -29,8 +29,7 @@ import {
 } from "../features/challenge/challengeEngine";
 import { createHostSupabase, getHostSupabase, supabase } from "../lib/supabase";
 import {
-  fetchRoom,
-  fetchTeams,
+  fetchBootstrapRoomState,
   roomColumns,
   roundColumns,
 } from "../lib/supabaseQueries";
@@ -261,28 +260,40 @@ export function useGameActions({
         joined_at: string;
         expires_at: string;
       };
-      const foundRoom = await fetchRoom(joinedSession.room_id);
-      const roomTeams = await fetchTeams(joinedSession.room_id);
-      const foundTeam = roomTeams.find((team: Team) => team.id === joinedSession.team_id);
-
-      if (!foundTeam) {
-        throw new Error("Leader team could not be restored.");
-      }
-
-      setRoom(foundRoom);
-      setTeams(roomTeams);
-      setLeaderTeam({ ...foundTeam, joined_at: joinedSession.joined_at });
-      setMode("leader");
-      queueRoomRefresh(foundRoom.id, 0);
       if (typeof window !== "undefined") {
+        // Persist the server-issued session before the recovery read so a
+        // transient bootstrap failure never loses a valid leader session.
         window.localStorage.setItem(
           LEADER_SESSION_KEY,
           JSON.stringify({
-            roomCode: foundRoom.code,
+            roomCode: normalizedRoomCode,
             sessionToken: joinedSession.session_token,
             expiresAt: joinedSession.expires_at,
           })
         );
+      }
+
+      const bootstrapStartedAt = performance.now();
+      const bootstrap = await fetchBootstrapRoomState(joinedSession.room_id);
+      const foundRoom = bootstrap.room;
+      const foundTeam = bootstrap.teams.find((team: Team) => team.id === joinedSession.team_id);
+
+      if (!foundRoom || !foundTeam) {
+        throw new Error("Leader team could not be restored.");
+      }
+
+      setRoom(foundRoom);
+      setTeams(bootstrap.teams);
+      setRounds(bootstrap.rounds);
+      setActiveRound(bootstrap.activeRound);
+      setVotes(bootstrap.votes);
+      setAnswerSubmissions(bootstrap.answers);
+      setLeaderTeam({ ...foundTeam, joined_at: joinedSession.joined_at });
+      setMode("leader");
+      if (import.meta.env.DEV) {
+        console.info(`[perf] leader join: ${Math.round(performance.now() - bootstrapStartedAt)}ms`);
+      }
+      if (typeof window !== "undefined") {
         const url = new URL(window.location.href);
         url.pathname = "/join";
         url.searchParams.set("room", foundRoom.code);
@@ -310,9 +321,12 @@ export function useGameActions({
     try {
       const definition = plannedDefinition ?? buildRoundDefinition(roundType);
       const nextRoundNumber = (rounds[0]?.round_number ?? 0) + 1;
-      const status: RoundStatus = "reveal";
       const hostSupabase = getHostSupabase();
       const quizQuestionSet = definition.questionSet ?? null;
+      // Question rounds have no useful reveal-only waiting step: starting the
+      // round means starting question one. The idempotent question RPC handles
+      // the immediate live transition after this insert is authoritative.
+      const status: RoundStatus = quizQuestionSet?.length ? "live" : "reveal";
       const publicQuestionSet = quizQuestionSet?.map(toPublicQuizQuestion) ?? null;
       const challengeConfig =
         definition.challengeConfig ?? challengeConfigForRoundType(definition.type);

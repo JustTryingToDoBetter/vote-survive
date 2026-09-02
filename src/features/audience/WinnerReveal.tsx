@@ -121,6 +121,7 @@ export function WinnerReveal({ winner, teams, reducedMotion }: WinnerRevealProps
                     loop
                     muted
                     playsInline
+                    preload="metadata"
                   />
                 ) : (
                   <div className="final-team-video-placeholder">No video</div>
@@ -155,6 +156,7 @@ export function WinnerReveal({ winner, teams, reducedMotion }: WinnerRevealProps
               loop
               muted
               playsInline
+              preload="metadata"
             />
           )}
           {lastTeam && loserVideo && (
@@ -165,6 +167,7 @@ export function WinnerReveal({ winner, teams, reducedMotion }: WinnerRevealProps
               loop
               muted
               playsInline
+              preload="metadata"
             />
           )}
         </motion.div>

@@ -7,7 +7,7 @@ import {
   Plus,
   SkipForward,
 } from "lucide-react";
-import { roundTypeLabels } from "../../data/gameContent";
+import { playableRoundTypes, roundTypeLabels } from "../../data/gameContent";
 import type { PlannedRound, RoundType } from "../../lib/types";
 
 type HostShowModePanelProps = {
@@ -41,9 +41,9 @@ export function HostShowModePanel(props: HostShowModePanelProps) {
               props.setSelectedRoundType(event.target.value as RoundType)
             }
           >
-            {Object.entries(roundTypeLabels).map(([value, label]) => (
+            {playableRoundTypes.map((value) => (
               <option key={value} value={value}>
-                {label}
+                {roundTypeLabels[value]}
               </option>
             ))}
           </select>

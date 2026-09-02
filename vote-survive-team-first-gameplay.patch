@@ -1,0 +1,515 @@
+diff --git a/src/data/teamChallenges.ts b/src/data/teamChallenges.ts
+new file mode 100644
+--- /dev/null
++++ b/src/data/teamChallenges.ts
+@@ -0,0 +1,107 @@
++export type TeamChallengeCategory = "bible" | "memory" | "teamwork" | "speed" | "strategy";
++
++export type TeamChallengeDefinition = {
++  id: string;
++  title: string;
++  category: TeamChallengeCategory;
++  description: string;
++};
++
++/**
++ * Core product rule:
++ * Every member of an eligible team participates unless a challenge explicitly
++ * says that it needs a captain or representative.
++ */
++export const teamChallenges: TeamChallengeDefinition[] = [
++  {
++    id: "bible-book-chain",
++    title: "Bible Book Chain",
++    category: "bible",
++    description:
++      "Teams alternate naming books of the Bible. A different teammate must answer every turn. Repeat, hesitate for 3 seconds, or answer incorrectly and your team is out.",
++  },
++  {
++    id: "bible-hunt-relay",
++    title: "Bible Hunt Relay",
++    category: "bible",
++    description:
++      "The host announces four Bible references. Each teammate must find one reference before tagging the next player. First team to complete the relay wins.",
++  },
++  {
++    id: "rapid-fire-rotation",
++    title: "Rapid Fire Rotation",
++    category: "bible",
++    description:
++      "Teams receive rapid-fire questions for 45 seconds. After every answer, the next teammate must answer. No player may answer twice until everyone has played.",
++  },
++  {
++    id: "event-order",
++    title: "Timeline Scramble",
++    category: "bible",
++    description:
++      "Teams receive Bible events in the wrong order. Work together to arrange them chronologically. Every teammate must place or verify at least one event. First correct team wins.",
++  },
++  {
++    id: "verse-puzzle",
++    title: "Verse Scramble",
++    category: "bible",
++    description:
++      "A Bible verse is split into pieces. Teams race to reconstruct the verse correctly and identify its reference. Every teammate must place or verify at least one piece.",
++  },
++  {
++    id: "memory-table",
++    title: "Memory Rush",
++    category: "memory",
++    description:
++      "The host reveals a board of items for 15 seconds. It disappears. Teams work together to write down as many correct items as possible, with every teammate contributing.",
++  },
++  {
++    id: "silent-line",
++    title: "Silent Line-Up",
++    category: "teamwork",
++    description:
++      "Without speaking, teams must arrange themselves according to the host's rule. The whole team must be correctly ordered. First team finished wins.",
++  },
++  {
++    id: "three-clue-character",
++    title: "Who Am I?",
++    category: "bible",
++    description:
++      "The host reveals Bible-character clues one at a time. Teams discuss together and may submit only one guess. Earlier correct guesses score higher.",
++  },
++  {
++    id: "category-blitz",
++    title: "Category Blitz",
++    category: "speed",
++    description:
++      "The host announces a category such as Kings of Israel, Women in the Bible, or New Testament books. Teams have 30 seconds to produce as many valid answers as possible, rotating through every teammate.",
++  },
++  {
++    id: "answer-board",
++    title: "Lock It In",
++    category: "strategy",
++    description:
++      "Every team discusses the same question and secretly locks in one answer. Every teammate must contribute before the team locks in. Reveal all answers simultaneously.",
++  },
++  {
++    id: "bible-connect",
++    title: "Connect",
++    category: "bible",
++    description:
++      "Teams receive two Bible characters, places, or events and must identify the connection between them. Build one verified explanation together. First correct team wins.",
++  },
++  {
++    id: "four-corners",
++    title: "Choose Your Corner",
++    category: "speed",
++    description:
++      "Four possible answers are assigned to four parts of the room. Teams discuss quickly, then everyone must move to their team's chosen answer before time expires.",
++  },
++  {
++    id: "team-code",
++    title: "Crack the Code",
++    category: "strategy",
++    description:
++      "Each solved Bible clue reveals part of a final code. Teams divide the clues among themselves and combine their answers to unlock the final solution.",
++  },
++];
+diff --git a/src/data/gameContent.ts b/src/data/gameContent.ts
+--- a/src/data/gameContent.ts
++++ b/src/data/gameContent.ts
+@@ -1,10 +1,11 @@
+ import type {
+   QuizDifficulty,
+   QuizQuestion,
+   RoundDefinition,
+   RoundType,
+ } from "../lib/types";
++import { teamChallenges } from "./teamChallenges";
+ 
+ 
+ // ---------------------------------------------------------------------------
+ // ALL-PLAY CHALLENGES
+@@ -10,6 +11,6 @@
+ // ---------------------------------------------------------------------------
+ 
+-const allPlayChallenges = [
++export const legacyAllPlayChallenges = [
+   "Run back-to-back 2v2 freeze battles. Each duo builds a Bible scene using only body poses.",
+   "All teams at the same time: 30 seconds to come up with a team handshake and perform it perfectly.",
+   "Each team has 45 seconds to build a human sculpture that represents one of the Fruits of the Spirit.",
+@@ -29,29 +30,24 @@
+ ];
+ 
+ const votingPrompts = [
+-  "Let the room pick the pressure team.",
+-  "Choose the team that has to make the big call.",
+-  "Who is walking into the spotlight tonight?",
+-  "The vote decides who faces the pressure.",
+-  "Pick the target team before the challenge is revealed.",
+-  "The room decides which team takes the risk.",
+-  "Vote for the pressure matchup.",
+-  "Name the team under the spotlight.",
++  "Vote for the team you want to see in the next showdown.",
++  "Pick the team that should face the pressure matchup.",
++  "Choose the team that has to prove itself in a whole-team showdown.",
++  "Who should step into the next team-vs-team battle?",
+ ];
+ 
+ const votingChallenges = [
+-  "Every team nominates one leader to defend their side in the final vote.",
+-  "The pressure team must answer a Bible question before the timer ends.",
+-  "The target team picks the challenge category and the room votes the winner.",
+-  "The vote decides who faces the one-on-one pressure round tonight.",
+-  "The team with the loudest room energy earns the challenge spotlight.",
+-  "The pressure team gets one final chance to claim the room's attention.",
++  "Bible Hunt Relay Showdown: both selected teams race through four references. A different teammate handles each leg. First full team through wins.",
++  "Bible Book Chain Showdown: selected teams alternate answers. A different teammate must answer every turn; repeat, hesitate for 3 seconds, or miss and your team loses.",
++  "Verse Scramble Showdown: both selected teams reconstruct the same scrambled verse. Every teammate must place or verify at least one piece.",
++  "Silent Line-Up Showdown: both selected teams complete the same silent ordering challenge. Everyone must be in the correct position.",
++  "Category Blitz Showdown: selected teams rotate through teammates for 30 seconds. No one may answer twice until the whole team has played.",
++  "Crack the Code Showdown: split the clues across the whole team, solve them in parallel, then combine the answers into one final code.",
+ ];
+ 
+ const allPlayPrompts = [
+-  "Everyone joins in on the same challenge at once.",
+-  "This is full-room chaos with no voting required.",
+-  "All teams hit the challenge together and stack up their score.",
+-  "Every team is in the spotlight, all at once.",
+-  "The room explodes into one shared challenge moment.",
++  "Every team is live. Everybody has a job.",
++  "All teams compete at the same time — nobody sits this one out.",
++  "Whole-team challenge: work together, rotate, and finish first.",
++  "The entire room is playing. Every eligible teammate contributes.",
+ ];
+@@ -77,16 +77,13 @@
+ ];
+ 
+ const twists = [
+-  "The host can double the points if the room is loud enough.",
+-  "Flip the challenge categories at the last second.",
+-  "The pressure team picks the rule twist before the round starts.",
+-  "This round gets a surprise twist from the host bench.",
+-  "A bonus rule changes the whole feel of the final moment.",
++  "Rotation rule: no teammate may take a second turn until everyone on the eligible team has participated.",
++  "Whole-team rule: every eligible teammate must contribute before anyone repeats.",
+ ];
+ 
+ const finalChallenges = [
+-  "Final countdown: every score is doubled and the room is watching every move.",
+-  "This is the biggest moment of the night — no safe plays, only bold choices.",
+-  "The final challenge decides the winner in one unforgettable push.",
+-  "One last showdown turns the entire room into a live final.",
++  "FINAL RELAY: Every team races through a four-stage Bible Hunt Relay. Each teammate owns one stage. Final scoring is doubled.",
++  "FINAL CODE: Every team divides a multi-clue Bible code, solves in parallel, and combines one final answer. Final scoring is doubled.",
++  "FINAL MEMORY RUSH: Every team studies the same board, then rebuilds it from memory together. Final scoring is doubled.",
++  "FINAL TIMELINE: Every team arranges the same Bible events in order. Every teammate must place or verify at least one event. Final scoring is doubled.",
+ ];
+@@ -510,7 +507,7 @@
+ // STEAL ROUND PROMPTS
+ // ---------------------------------------------------------------------------
+ 
+-const stealChallenges = [
++export const legacyStealChallenges = [
+   "KINGSLAYER: The pressure team challenges the team in 1st place. Win one sudden-death challenge and steal 8 points. Lose and the leaders steal 3 from you.",
+ 
+   "THE HEIST: Pick any rival team and announce how many points you want to steal: 3, 5, or 8. The higher the steal, the harder the host makes the challenge. Fail and you pay half the attempted steal.",
+@@ -542,2 +539,10 @@
+   "FINAL BOSS: The lowest-ranked team challenges the current leader. The trailing team chooses the challenge category. The leader chooses who represents each team. Winner steals 10.",
+ ];
++
++const stealChallenges = [
++  "BIBLE HUNT RAID: Pressure team and assigned rival race through a four-reference relay. Every teammate takes one leg. Pressure-team win steals 5 points; rival win blocks.",
++  "CODE BREAK HEIST: Both teams divide the clues, solve in parallel, and combine the final code. Pressure-team win steals 5 points; rival win blocks.",
++  "CATEGORY HEIST: Rotate through the whole team for 30 seconds. No teammate may answer twice until everyone has played. Pressure-team win steals 5 points; rival win blocks.",
++  "VERSE VAULT: Rebuild the same scrambled verse as a full team. Everyone must place or verify a piece. Pressure-team win steals 5 points; rival win blocks.",
++  "MEMORY RAID: The same board is shown to both teams, then hidden. Every teammate contributes to one final list. Pressure-team win steals 5 points; rival win blocks.",
++];
+@@ -611,9 +616,18 @@
+ export const roundTypeLabels: Record<RoundType, string> = {
+-  voting: "Voting Round",
+-  all_play: "All-Play Challenge",
++  voting: "Showdown",
++  all_play: "Challenge",
+   quiz_burst: "Quiz Burst",
+-  bible_speed: "Bible Speed Round",
++  bible_speed: "Bible Speed",
+   dance_battle: "Dance Battle",
+-  steal: "Steal Round",
+-  final_double: "Final Double Points",
++  steal: "Steal",
++  final_double: "Final",
+ };
++
++// Keep the older persisted round IDs for database compatibility, but only
++// expose the four simple game concepts when a host creates new rounds.
++export const playableRoundTypes = [
++  "all_play",
++  "voting",
++  "steal",
++  "final_double",
++] as const satisfies readonly RoundType[];
+@@ -624,14 +636,7 @@
+ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
+   const type =
+     roundType ??
+-    pickRandom<RoundType>([
+-      "voting",
+-      "all_play",
+-      "quiz_burst",
+-      "bible_speed",
+-      "dance_battle",
+-      "steal",
+-    ]);
++    pickRandom<RoundType>(["all_play", "voting", "steal"]);
+ 
+   switch (type) {
+     case "voting":
+@@ -638,27 +646,28 @@
+       return {
+         type,
+-        title: "Pressure Duel Vote",
++        title: "Showdown",
+         prompt: pickRandom(votingPrompts),
+         challenge: pickRandom(votingChallenges),
+         instructions:
+-          "Leaders vote from their phones. Once locked, reveal the pressure team and match them into a direct duel.",
++          "Leaders vote for the pressure team. Once locked, the pressure team and assigned rival compete as whole teams. Every eligible teammate should take part.",
+         scoringGuide:
+-          "Use winner and runner-up scoring for the duel, then give participation or bonus points to the rest.",
+-        twist: pickRandom(twists),
++          "The showdown winner gets +10 and the other matchup team gets +5 automatically.",
+         requiresVoting: true,
+       };
+ 
+-    case "all_play":
++    case "all_play": {
++      const selectedChallenge = pickRandom(teamChallenges);
+       return {
+         type,
+-        title: "Tag-Team Clash",
++        title: selectedChallenge.title,
+         prompt: pickRandom(allPlayPrompts),
+-        challenge: pickRandom(allPlayChallenges),
++        challenge: selectedChallenge.description,
+         instructions:
+-          "No voting. Pair teams into two 2v2 battles or run one featured 2v2 showdown at a time.",
++          "No voting. Every team competes at the same time. Every eligible teammate should have a role before anyone repeats.",
+         scoringGuide:
+-          "Score the winning duo high, the other duo as runner-up or effort, then add custom bonuses if needed.",
++          "Keep scoring simple: reward the winning team, then use effort or participation points only when needed.",
+         requiresVoting: false,
+       };
++    }
+ 
+     case "quiz_burst": {
+@@ -710,27 +720,26 @@
+     case "steal":
+       return {
+         type,
+-        title: "Steal Duel",
+-        prompt: "One 1v1 battle can swing the entire room.",
++        title: "Steal",
++        prompt: "The pressure team gets one clean chance to take 5 points.",
+         challenge: pickRandom(stealChallenges),
+         instructions:
+-          "Use voting first to pick the pressure team, then match them against one rival for the steal attempt.",
++          "Voting picks the pressure team and assigns a rival. Both teams complete one whole-team challenge; every eligible teammate should take part.",
+         scoringGuide:
+-          "Award normal winner and runner-up points, then use a custom score if you want to add the steal bonus.",
++          "Pressure-team win steals up to 5 points from the rival. Rival win blocks the steal. No extra penalties, wagers, or hidden bonuses.",
+         requiresVoting: true,
+       };
+ 
+     case "final_double":
+       return {
+         type,
+-        title: "Final Round",
+-        prompt: "Everything counts double now. This is where legends are made.",
++        title: "Final",
++        prompt: "Everybody is live. One final whole-team challenge decides the finish.",
+         challenge: pickRandom(finalChallenges),
+         instructions:
+-          "Host launches the final round, chooses the final matchups, scores every team, then reveals the winner.",
++          "All teams compete. Every eligible teammate should contribute. Keep the final easy to explain and big to watch.",
+         scoringGuide:
+-          "Every score action is doubled automatically in the final round. No holding back.",
+-        twist: pickRandom(twists),
++          "Score normally; every host score adjustment is doubled automatically in the final round.",
+         requiresVoting: false,
+         isFinal: true,
+       };
+@@ -739,14 +748,13 @@
+     default:
+       return {
+         type: "voting",
+-        title: "Pressure Duel Vote",
++        title: "Showdown",
+         prompt: pickRandom(votingPrompts),
+         challenge: pickRandom(votingChallenges),
+         instructions:
+-          "Leaders vote from their phones. Once locked, reveal the pressure team and match them into a direct duel.",
++          "Leaders vote for the pressure team. Once locked, the pressure team and assigned rival compete as whole teams.",
+         scoringGuide:
+-          "Use winner and runner-up scoring for the duel, then give participation or bonus points to the rest.",
+-        twist: pickRandom(twists),
++          "The showdown winner gets +10 and the other matchup team gets +5 automatically.",
+         requiresVoting: true,
+       };
+   }
+diff --git a/src/features/challenge/challengeEngine.ts b/src/features/challenge/challengeEngine.ts
+--- a/src/features/challenge/challengeEngine.ts
++++ b/src/features/challenge/challengeEngine.ts
+@@ -13,7 +13,7 @@
+     participantCount: 2,
+     durationSeconds: 30,
+     matchupRule: "vote_runner_up",
+-    winCondition: "Host declares the winner of the pressure showdown.",
++    winCondition: "The selected teams compete in one whole-team showdown; host declares the winner.",
+     scoringMode: "winner_points",
+     winnerPoints: 10,
+     runnerUpPoints: 5,
+@@ -23,6 +23,6 @@
+     participantCount: null,
+     durationSeconds: null,
+     matchupRule: "none",
+-    winCondition: "Host judges the room-wide challenge using the round instructions.",
++    winCondition: "Every team participates; host judges the room-wide challenge using the round instructions.",
+     scoringMode: "manual",
+   },
+@@ -54,7 +54,7 @@
+     participantCount: 2,
+     durationSeconds: 30,
+     matchupRule: "vote_runner_up",
+-    winCondition: "Pressure team wins to steal 5 points; rival wins to block the steal.",
++    winCondition: "Pressure team and rival compete as whole teams. Pressure-team win steals 5 points; rival win blocks.",
+     scoringMode: "steal",
+     stealAmount: 5,
+   },
+diff --git a/src/features/host/HostShowModePanel.tsx b/src/features/host/HostShowModePanel.tsx
+--- a/src/features/host/HostShowModePanel.tsx
++++ b/src/features/host/HostShowModePanel.tsx
+@@ -7,5 +7,5 @@
+   Plus,
+   SkipForward,
+ } from "lucide-react";
+-import { roundTypeLabels } from "../../data/gameContent";
++import { playableRoundTypes, roundTypeLabels } from "../../data/gameContent";
+ import type { PlannedRound, RoundType } from "../../lib/types";
+@@ -43,9 +43,9 @@
+               props.setSelectedRoundType(event.target.value as RoundType)
+             }
+           >
+-            {Object.entries(roundTypeLabels).map(([value, label]) => (
++            {playableRoundTypes.map((value) => (
+               <option key={value} value={value}>
+-                {label}
++                {roundTypeLabels[value]}
+               </option>
+             ))}
+           </select>
+diff --git a/src/features/host/HostCommandPanel.tsx b/src/features/host/HostCommandPanel.tsx
+--- a/src/features/host/HostCommandPanel.tsx
++++ b/src/features/host/HostCommandPanel.tsx
+@@ -1,5 +1,5 @@
+ import { motion } from "framer-motion";
+ import { Play, Sparkles, TimerReset, Trophy, Vote } from "lucide-react";
+-import { roundTypeLabels } from "../../data/gameContent";
++import { playableRoundTypes, roundTypeLabels } from "../../data/gameContent";
+ import {
+   formatSyncState,
+@@ -108,7 +108,9 @@
+   return (
+     <section className="host-panel host-run-game">
+       <div className="status-strip-inline">
+         <StatusPill label="Joined" value={`${joinedTeams}/${props.teams.length}`} />
+-        <StatusPill label="Voting" value={`${voteProgress}%`} />
++        {isVoteRound && (
++          <StatusPill label="Voting" value={`${voteProgress}%`} />
++        )}
+         <StatusPill label="Sync" value={formatSyncState(props.syncState)} />
+       </div>
+@@ -146,9 +148,9 @@
+                 props.setSelectedRoundType(event.target.value as RoundType)
+               }
+             >
+-              {Object.entries(roundTypeLabels).map(([value, label]) => (
++              {playableRoundTypes.map((value) => (
+                 <option key={value} value={value}>
+-                  {label}
++                  {roundTypeLabels[value]}
+                 </option>
+               ))}
+             </select>
+diff --git a/src/app/App.tsx b/src/app/App.tsx
+--- a/src/app/App.tsx
++++ b/src/app/App.tsx
+@@ -45,7 +45,7 @@
+   const [mode, setMode] = useState<AppMode>(
+     initialPath === "game" || initialPath === "leaderboard" ? initialPath : "home"
+   );
+-  const [selectedRoundType, setSelectedRoundType] = useState<RoundType>("voting");
++  const [selectedRoundType, setSelectedRoundType] = useState<RoundType>("all_play");
+   const [timerDuration, setTimerDuration] = useState(DEFAULT_ROUND_SECONDS);
+   const [customTimerInput, setCustomTimerInput] = useState("");
+   const [customScoreInputs, setCustomScoreInputs] = useState<Record<string, string>>({});
+diff --git a/src/data/gameContent.test.ts b/src/data/gameContent.test.ts
+--- a/src/data/gameContent.test.ts
++++ b/src/data/gameContent.test.ts
+@@ -1,3 +1,9 @@
+ import { describe, expect, it } from "vitest";
+-import { buildQuizQuestionSet } from "./gameContent";
++import {
++  buildQuizQuestionSet,
++  buildRoundDefinition,
++  playableRoundTypes,
++  roundTypeLabels,
++} from "./gameContent";
++import { teamChallenges } from "./teamChallenges";
+ import { LIVE_SYNC_INTERVAL_MS } from "../lib/sessionConfig";
+@@ -31,4 +37,50 @@
+   it("uses a slower polling fallback so realtime handles most sync traffic", () => {
+     expect(LIVE_SYNC_INTERVAL_MS).toBe(20000);
+   });
++
++  it("exposes only the four simple host-facing game concepts", () => {
++    expect([...playableRoundTypes]).toEqual([
++      "all_play",
++      "voting",
++      "steal",
++      "final_double",
++    ]);
++    expect(playableRoundTypes.map((type) => roundTypeLabels[type])).toEqual([
++      "Challenge",
++      "Showdown",
++      "Steal",
++      "Final",
++    ]);
++  });
++
++  it("ships a whole-team challenge deck", () => {
++    expect(teamChallenges).toHaveLength(13);
++    expect(teamChallenges.some((challenge) => challenge.id === "bible-hunt-relay")).toBe(true);
++    expect(
++      teamChallenges.every(
++        (challenge) => challenge.title.trim().length > 0 && challenge.description.trim().length > 0
++      )
++    ).toBe(true);
++  });
++
++  it("builds Challenge rounds directly from the whole-team deck", () => {
++    const round = buildRoundDefinition("all_play");
++    const matchingChallenge = teamChallenges.find((challenge) => challenge.title === round.title);
++
++    expect(matchingChallenge?.description).toBe(round.challenge);
++    expect(round.instructions).toContain("Every eligible teammate");
++    expect(round.requiresVoting).toBe(false);
++  });
++
++  it("keeps Showdown and Steal mechanics whole-team and simple", () => {
++    const showdown = buildRoundDefinition("voting");
++    const steal = buildRoundDefinition("steal");
++
++    expect(showdown.instructions).toContain("whole teams");
++    expect(showdown.scoringGuide).toContain("+10");
++    expect(showdown.scoringGuide).toContain("+5");
++    expect(steal.instructions).toContain("whole-team");
++    expect(steal.scoringGuide).toContain("up to 5 points");
++    expect(steal.scoringGuide).toContain("No extra penalties");
++  });
+ });

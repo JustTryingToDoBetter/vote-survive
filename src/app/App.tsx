@@ -17,6 +17,7 @@ import {
   getCurrentQuestionIndex,
   getQuizSecondsLeft,
   isRapidQuizRound,
+  shouldAutoStartQuizQuestion,
 } from "../features/quiz/quizEngine";
 import { AnimatedLeaderboard } from "../features/shared/AnimatedLeaderboard";
 import { TimerRing } from "../features/shared/TimerRing";
@@ -56,7 +57,7 @@ export default function App() {
   const [mode, setMode] = useState<AppMode>(
     initialPath === "game" || initialPath === "leaderboard" ? initialPath : "home"
   );
-  const [selectedRoundType, setSelectedRoundType] = useState<RoundType>("voting");
+  const [selectedRoundType, setSelectedRoundType] = useState<RoundType>("all_play");
   const [timerDuration, setTimerDuration] = useState(DEFAULT_ROUND_SECONDS);
   const [customTimerInput, setCustomTimerInput] = useState("");
   const [customScoreInputs, setCustomScoreInputs] = useState<Record<string, string>>({});
@@ -65,6 +66,7 @@ export default function App() {
   const lastCountdownSoundRef = useRef<number | null>(null);
   const autoLockingRoundRef = useRef<string | null>(null);
   const autoLockingQuizRef = useRef<string | null>(null);
+  const autoStartingQuizRef = useRef<string | null>(null);
 
   const session = useRoomSession({ initialPath, initialRoomCode, setMode });
 
@@ -101,9 +103,17 @@ export default function App() {
   }, [session.activeRound, now]);
 
   const voteCounts = useMemo(() => {
+    const countsByTargetId = new Map<string, number>();
+    for (const vote of session.votes) {
+      countsByTargetId.set(
+        vote.target_team_id,
+        (countsByTargetId.get(vote.target_team_id) ?? 0) + 1
+      );
+    }
+
     return session.teams.map((team) => ({
       team,
-      count: session.votes.filter((vote) => vote.target_team_id === team.id).length,
+      count: countsByTargetId.get(team.id) ?? 0,
     }));
   }, [session.teams, session.votes]);
 
@@ -243,7 +253,8 @@ export default function App() {
   }, [session.activeRound, session.activeRound?.status, secondsLeft, sound]);
 
   useEffect(() => {
-  if (
+    if (mode !== "host") return;
+    if (
     !session.activeRound ||
     session.activeRound.status !== "voting" ||
     secondsLeft > 0
@@ -264,11 +275,34 @@ export default function App() {
   void actions.lockVotes();
 }, [
   actions,
+  mode,
   secondsLeft,
   session.activeRound,
 ]);
 
   useEffect(() => {
+    if (mode !== "host") return;
+    const round = session.activeRound;
+    if (
+      !round ||
+      !shouldAutoStartQuizQuestion(round)
+    ) {
+      return;
+    }
+
+    const key = `${round.id}:${getCurrentQuestionIndex(round)}`;
+    if (autoStartingQuizRef.current === key) return;
+
+    autoStartingQuizRef.current = key;
+    void quizActions.startQuestion().then((started) => {
+      if (!started && autoStartingQuizRef.current === key) {
+        autoStartingQuizRef.current = null;
+      }
+    });
+  }, [mode, quizActions, session.activeRound]);
+
+  useEffect(() => {
+    if (mode !== "host") return;
     const round = session.activeRound;
     if (
       !round ||
@@ -290,10 +324,13 @@ export default function App() {
         autoLockingQuizRef.current = null;
       }
     });
-  }, [quizActions, secondsLeft, session.activeRound]);
+  }, [mode, quizActions, secondsLeft, session.activeRound]);
 
   useEffect(() => {
     const round = session.activeRound;
+    if (!round || round.question_status !== "waiting") {
+      autoStartingQuizRef.current = null;
+    }
     if (!round || round.question_status !== "live") {
       autoLockingQuizRef.current = null;
     }
