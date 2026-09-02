@@ -326,7 +326,11 @@ export function useGameActions({
       // Question rounds have no useful reveal-only waiting step: starting the
       // round means starting question one. The idempotent question RPC handles
       // the immediate live transition after this insert is authoritative.
-      const status: RoundStatus = quizQuestionSet?.length ? "live" : "reveal";
+      // A host choosing an all-team Challenge or Final has already made the
+      // meaningful decision. Put it live immediately; only match-up rounds
+      // retain a reveal beat before voting opens.
+      const status: RoundStatus =
+        quizQuestionSet?.length || !definition.requiresVoting ? "live" : "reveal";
       const publicQuestionSet = quizQuestionSet?.map(toPublicQuizQuestion) ?? null;
       const challengeConfig =
         definition.challengeConfig ?? challengeConfigForRoundType(definition.type);

@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChartNoAxesColumnIncreasing, Eye, Lock, Radio, Sparkles, Star, Trophy, Users } from "lucide-react";
-import { WinnerReveal } from "../features/audience/WinnerReveal";
 import { ProjectorStage } from "../features/audience/ProjectorStage";
 import {
   DEFAULT_ROUND_SECONDS,
@@ -34,6 +33,11 @@ import type {
   Team,
 } from "../lib/types";
 import "../App.css";
+
+const WinnerReveal = lazy(async () => {
+  const module = await import("../features/audience/WinnerReveal");
+  return { default: module.WinnerReveal };
+});
 
 export default function App() {
   const reducedMotion = useReducedMotion();
@@ -517,11 +521,9 @@ function GameScreen(props: {
       </header>
 
       {props.showWinner && props.winnerTeam ? (
-        <WinnerReveal
-          winner={props.winnerTeam}
-          teams={props.sortedTeams}
-          reducedMotion={props.reducedMotion}
-        />
+        <Suspense fallback={<section className="projector-stage is-waiting" aria-live="polite">Preparing the final reveal…</section>}>
+          <WinnerReveal winner={props.winnerTeam} teams={props.sortedTeams} reducedMotion={props.reducedMotion} />
+        </Suspense>
       ) : (
         <ProjectorStage
           room={props.room}
@@ -581,11 +583,9 @@ function LeaderboardScreen(props: {
       </header>
 
       {props.showWinner && props.winnerTeam ? (
-        <WinnerReveal
-          winner={props.winnerTeam}
-          teams={props.sortedTeams}
-          reducedMotion={props.reducedMotion}
-        />
+        <Suspense fallback={<section className="projector-stage is-waiting" aria-live="polite">Preparing the final reveal…</section>}>
+          <WinnerReveal winner={props.winnerTeam} teams={props.sortedTeams} reducedMotion={props.reducedMotion} />
+        </Suspense>
       ) : (
         <section className="audience-main leaderboard-screen-panel">
           <AnimatedLeaderboard teams={props.sortedTeams} maxScore={maxScore} />

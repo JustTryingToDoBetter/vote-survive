@@ -192,8 +192,8 @@ export function useQuizActions({
           award.teamId,
           award.points,
           award.role === "fastest"
-            ? "Rapid quiz fastest correct"
-            : "Rapid quiz correct answer",
+            ? "Challenge quiz fastest correct"
+            : "Challenge quiz correct answer",
           `quiz:${activeRound.id}:${questionIndex}:${award.teamId}:result`
         );
       }

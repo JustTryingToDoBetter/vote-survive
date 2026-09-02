@@ -584,6 +584,28 @@ export function buildQuizQuestionSet(roundType: RoundType, count = 5): QuizQuest
     }));
 }
 
+/** Quiz is a Challenge capability, not a fifth host-facing game mode. */
+export function buildQuickfireChallengeDefinition(): RoundDefinition {
+  const questionSet = buildQuizQuestionSet("quiz_burst");
+  const firstQuestion = questionSet[0];
+
+  return {
+    type: "all_play",
+    title: "Bible Quickfire",
+    prompt: "Every team answers from their phone.",
+    challenge: firstQuestion.prompt,
+    instructions:
+      "Question 1 starts automatically. Teams discuss and lock one answer on their phone before the timer ends. Reveal, score, then Next starts the next question immediately.",
+    scoringGuide: "Fastest correct earns +10. Every other correct team earns +5.",
+    requiresVoting: false,
+    answerOptions: firstQuestion.options,
+    correctAnswer: firstQuestion.correctAnswer,
+    questionSet,
+    currentQuestionIndex: 0,
+    questionStatus: "waiting",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // ROUND TYPE LABELS
 // ---------------------------------------------------------------------------
@@ -628,6 +650,11 @@ export function buildRoundDefinition(roundType?: RoundType): RoundDefinition {
       }
 
     case "all_play": {
+      // One in five Challenges is a ready-to-run phone quiz. It keeps the
+      // four-concept model intact while using the existing leader quiz flow.
+      if (Math.floor(Math.random() * 5) === 0) {
+        return buildQuickfireChallengeDefinition();
+      }
       const selectedChallenge = pickRandom(teamChallenges);
       return {
         type,

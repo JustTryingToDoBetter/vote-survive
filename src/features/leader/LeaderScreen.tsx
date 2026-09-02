@@ -4,7 +4,7 @@ import { roundTypeLabels } from "../../data/gameContent";
 import type { AnswerSubmission, Room, RoundRecord, Team } from "../../lib/types";
 import { getRoundTimerSeconds } from "../gameflow/gamePhases";
 import { QuizLeaderPanel } from "../quiz/QuizLeaderPanel";
-import { isRapidQuizRound } from "../quiz/quizEngine";
+import { getCurrentQuestion, isRapidQuizRound } from "../quiz/quizEngine";
 import { TeamAvatar } from "../shared/TeamAvatar";
 import { TimerRing } from "../shared/TimerRing";
 import { LeaderAnswerPanel } from "./LeaderAnswerPanel";
@@ -73,7 +73,7 @@ export function LeaderScreen(props: LeaderScreenProps) {
           {(voteOpen || answerOpen) && props.activeRound && (
             <TimerRing
               secondsLeft={props.secondsLeft}
-              duration={getRoundTimerSeconds(props.activeRound)}
+              duration={getCurrentQuestion(props.activeRound)?.timeLimitSeconds ?? getRoundTimerSeconds(props.activeRound)}
               compact
             />
           )}
@@ -169,7 +169,7 @@ function PlayerTaskPanel({
 
       <h3>
         {quizOpen
-          ? "Rapid-fire quiz"
+          ? round.title
           : answerOpen
           ? "Choose your answer"
           : voteOpen
@@ -180,7 +180,7 @@ function PlayerTaskPanel({
       </h3>
       <p>
         {quizOpen
-          ? "The next question appears as soon as the host advances."
+          ? "Discuss with your team, then lock one answer before time runs out."
           : answerOpen
           ? "Answer from your phone. Fastest correct answer can swing the scoring."
           : voteOpen

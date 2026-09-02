@@ -9,6 +9,7 @@ import {
   getQuizAwardPlan,
   getQuizSecondsLeft,
   isLastQuizQuestion,
+  isRapidQuizRound,
   isQuizTimerExpired,
   shouldAutoStartQuizQuestion,
   toPublicQuizQuestion,
@@ -233,5 +234,10 @@ describe("quizEngine", () => {
     expect(shouldAutoStartQuizQuestion(makeRound({ question_status: "live", status: "live" }))).toBe(false);
     expect(shouldAutoStartQuizQuestion(makeRound({ question_status: "waiting", status: "reveal" }))).toBe(false);
     expect(shouldAutoStartQuizQuestion(makeRound({ question_set: null, question_status: "waiting", status: "live" }))).toBe(false);
+  });
+
+  it("treats a question set as a capability of a normal Challenge", () => {
+    expect(isRapidQuizRound(makeRound({ round_type: "all_play" }))).toBe(true);
+    expect(isRapidQuizRound(makeRound({ question_set: null }))).toBe(false);
   });
 });

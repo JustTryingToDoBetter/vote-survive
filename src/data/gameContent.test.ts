@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildQuizQuestionSet,
+  buildQuickfireChallengeDefinition,
   buildRoundDefinition,
   playableRoundTypes,
   roundTypeLabels,
@@ -67,15 +68,29 @@ describe("buildQuizQuestionSet", () => {
     ).toBe(true);
   });
 
-  it("builds Challenge rounds directly from the whole-team deck", () => {
+  it("builds Challenge rounds from the whole-team deck or the built-in phone quiz", () => {
     const round = buildRoundDefinition("all_play");
     const matchingChallenge = teamChallenges.find((challenge) => challenge.title === round.title);
 
-    expect(matchingChallenge?.description).toBe(round.challenge);
-    expect(round.instructions).toBe(matchingChallenge?.instructions);
-    expect(round.prompt).toBe("All teams are in.");
-    expect(round.scoringGuide).toBe("Host scores teams using the standard score controls.");
+    if (matchingChallenge) {
+      expect(matchingChallenge.description).toBe(round.challenge);
+      expect(round.instructions).toBe(matchingChallenge.instructions);
+      expect(round.prompt).toBe("All teams are in.");
+      expect(round.scoringGuide).toBe("Host scores teams using the standard score controls.");
+    } else {
+      expect(round.title).toBe("Bible Quickfire");
+      expect(round.questionSet?.length).toBeGreaterThan(0);
+      expect(round.prompt).toBe("Every team answers from their phone.");
+    }
     expect(round.requiresVoting).toBe(false);
+  });
+
+  it("keeps phone trivia inside the Challenge concept", () => {
+    const round = buildQuickfireChallengeDefinition();
+    expect(round.type).toBe("all_play");
+    expect(round.questionSet).toHaveLength(5);
+    expect(round.questionStatus).toBe("waiting");
+    expect(round.scoringGuide).toBe("Fastest correct earns +10. Every other correct team earns +5.");
   });
 
   it("keeps Showdown, Steal, and Final mechanics clear and supported", () => {
@@ -85,7 +100,7 @@ describe("buildQuizQuestionSet", () => {
 
     expect(showdown.prompt).toBe("Two whole teams. One winner.");
     expect(showdown.scoringGuide).toBe("Winner +10. Other team +5.");
-    expect(showdown.instructions).toMatch(/both teams|each team|all teams|every team|team at a time/i);
+    expect(showdown.instructions).toMatch(/both teams|each teammate|every teammate|teams?/i);
     expect(steal.prompt).toBe("Win and take 5.");
     expect(steal.scoringGuide).toContain("up to 5 points");
     expect(steal.scoringGuide).toContain("Rival win blocks");

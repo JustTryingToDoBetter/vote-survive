@@ -20,10 +20,9 @@ export function toPublicQuizQuestion(question: QuizQuestion): QuizQuestion {
 }
 
 export function isRapidQuizRound(round: RoundRecord | null | undefined) {
-  return Boolean(
-    round?.question_set?.length &&
-      (round.round_type === "quiz_burst" || round.round_type === "bible_speed")
-  );
+  // Question sets are a capability. Legacy quiz types remain readable, while
+  // a normal Challenge can now use the same secure quiz lifecycle.
+  return Boolean(round?.question_set?.length);
 }
 
 export function getCurrentQuestion(round: RoundRecord | null | undefined): QuizQuestion | null {

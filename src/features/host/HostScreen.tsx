@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
 import { Monitor, Shuffle, Trophy, Volume2, VolumeX } from "lucide-react";
+import { lazy, Suspense } from "react";
 import type React from "react";
 import { HostGameflow } from "../gameflow/HostGameflow";
-import { WinnerReveal } from "../audience/WinnerReveal";
 import { HostCommandPanel } from "./HostCommandPanel";
 import { HostScorePanel } from "./HostScorePanel";
 import { HostSetupPanel } from "./HostSetupPanel";
@@ -17,6 +17,11 @@ import type {
   Team,
   VoteRow,
 } from "../../lib/types";
+
+const WinnerReveal = lazy(async () => {
+  const module = await import("../audience/WinnerReveal");
+  return { default: module.WinnerReveal };
+});
 
 export type HostScreenProps = {
   room: Room;
@@ -193,11 +198,13 @@ export function HostScreen(props: HostScreenProps) {
           )}
 
           {(props.showWinner || props.activeRound?.status === "winner") && props.winnerTeam && (
-            <WinnerReveal
-              winner={props.winnerTeam}
-              teams={props.sortedTeams}
-              reducedMotion={Boolean(props.reducedMotion)}
-            />
+            <Suspense fallback={<p className="muted-text" aria-live="polite">Preparing the final reveal…</p>}>
+              <WinnerReveal
+                winner={props.winnerTeam}
+                teams={props.sortedTeams}
+                reducedMotion={Boolean(props.reducedMotion)}
+              />
+            </Suspense>
           )}
         </div>
 
