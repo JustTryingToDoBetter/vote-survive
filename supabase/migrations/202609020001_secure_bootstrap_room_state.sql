@@ -9,10 +9,13 @@ as $$
 declare
   v_active_round_id uuid;
   v_active_question_index integer;
+  v_is_host boolean;
 begin
   if not exists (select 1 from public.rooms where id = p_room_id) then
     raise exception 'Room not found.';
   end if;
+
+  v_is_host := public.is_room_host(p_room_id);
 
   select r.id into v_active_round_id
   from public.rounds r
@@ -35,7 +38,8 @@ begin
       select jsonb_agg(jsonb_build_object(
         'id', t.id, 'room_id', t.room_id, 'name', t.name, 'score', t.score,
         'joined_at', t.joined_at, 'animal', t.animal, 'avatar_emoji', t.avatar_emoji,
-        'avatar_image', t.avatar_image, 'color', t.color
+        'avatar_image', t.avatar_image, 'color', t.color, 
+        'leader_code', case when v_is_host then t.leader_code else null end
       ) order by t.name)
       from public.teams t where t.room_id = p_room_id
     ), '[]'::jsonb),

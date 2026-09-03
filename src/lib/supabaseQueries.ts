@@ -128,7 +128,21 @@ export async function fetchScores(roomId: string) {
 
 export async function fetchBootstrapRoomState(roomId: string) {
   const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-  const { data, error } = await supabase.rpc("bootstrap_room_state", {
+
+  // Use the host-authenticated client when a host session exists so the RPC's
+  // is_room_host() check passes and leader_code comes back populated. Falls
+  // back to the anon client for leaders/audience, or if the stored session
+  // is stale/invalid.
+  let client = supabase;
+  if (typeof window !== "undefined" && window.localStorage.getItem(HOST_SESSION_KEY)) {
+    try {
+      client = getHostSupabase();
+    } catch {
+      // stale/missing host session — fall back to anon rather than throwing
+    }
+  }
+
+  const { data, error } = await client.rpc("bootstrap_room_state", {
     p_room_id: roomId,
   });
 
