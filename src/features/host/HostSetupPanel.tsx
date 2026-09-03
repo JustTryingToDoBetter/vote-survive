@@ -98,6 +98,9 @@ function TeamCodeRow(props: { team: Team; index: number }) {
       />
       <div>
         <strong>{props.team.name}</strong>
+        <span className="team-code-code">
+          Team code : <b>{props.team.leader_code ?? "-"}</b>
+        </span>
         <span>{props.team.joined_at ? "Leader connected" : "Waiting to join"}</span>
       </div>
       <i className={props.team.joined_at ? "team-connection is-connected" : "team-connection"} aria-label={props.team.joined_at ? "Leader connected" : "Leader not connected"} />

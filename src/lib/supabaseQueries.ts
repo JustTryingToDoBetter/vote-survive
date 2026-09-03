@@ -4,7 +4,7 @@ import type { AnswerSubmission, Room, RoundRecord, ScoreEvent, Team, VoteRow } f
 
 export const roomColumns = "id,code,status,planned_round_queue,created_at";
 export const teamColumns =
-  "id,room_id,name,score,joined_at,animal,avatar_emoji,avatar_image,color";
+  "id,room_id,name,leader_code,score,joined_at,animal,avatar_emoji,avatar_image,color";
 export const roundColumns =
   "id,room_id,round_number,round_type,title,prompt,question,challenge,scoring_guide,instructions,twist,status,target_team_id,rival_team_id,challenge_config,challenge_winner_team_id,challenge_resolved_at,is_final,timer_seconds,answer_options,correct_answer,question_set,current_question_index,question_status,question_started_at,started_at,created_at";
 export const voteColumns = "id,round_id,voter_team_id,target_team_id";
